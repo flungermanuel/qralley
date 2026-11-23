@@ -169,7 +169,7 @@ describe("quest", () => {
 		await scanAndShow(scanner, qrUrl(tokenFor("goldenes-dachl")));
 		await screen.findByRole("heading", { name: "Goldenes Dachl" });
 
-		fireEvent.click(screen.getByLabelText("Golden"));
+		fireEvent.click(await screen.findByLabelText("Golden"));
 		fireEvent.click(screen.getByRole("button", { name: texts.quest.check }));
 
 		expect(await screen.findByText(texts.quest.correct(40))).toBeTruthy();
@@ -188,7 +188,7 @@ describe("quest", () => {
 		await scanAndShow(scanner, qrUrl(tokenFor("goldenes-dachl")));
 		await screen.findByRole("heading", { name: "Goldenes Dachl" });
 
-		fireEvent.click(screen.getByLabelText("Rot"));
+		fireEvent.click(await screen.findByLabelText("Rot"));
 		fireEvent.click(screen.getByRole("button", { name: texts.quest.check }));
 
 		expect(await screen.findByText(texts.quest.wrong)).toBeTruthy();
@@ -204,7 +204,7 @@ describe("quest", () => {
 		await scanAndShow(scanner, qrUrl(tokenFor("annasaeule")));
 		await screen.findByRole("heading", { name: "Annasäule" });
 
-		fireEvent.change(screen.getByLabelText(texts.quest.answerLabel), {
+		fireEvent.change(await screen.findByLabelText(texts.quest.answerLabel), {
 			target: { value: "  1706 " },
 		});
 		fireEvent.click(screen.getByRole("button", { name: texts.quest.check }));

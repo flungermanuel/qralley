@@ -17,7 +17,10 @@ export type AnswerResult =
 				| "unknown_station";
 	  };
 
-/** Checks an answer locally. Only a correct answer is recorded; wrong answers leave no trace. */
+/**
+ * Checks an answer locally. Only a correct answer is recorded (progress and
+ * outbox entry in one transaction); wrong answers leave no trace.
+ */
 export async function answerQuest(
 	db: QurallyDb,
 	bundle: RouteBundle,
@@ -30,7 +33,7 @@ export async function answerQuest(
 	if (stationStates[stationId]?.status === "blocked")
 		return { status: "blocked" };
 
-	return db.transaction("rw", db.progress, async () => {
+	return db.transaction("rw", db.progress, db.outbox, async () => {
 		const existing = await db.progress.get([route.id, stationId]);
 		if (!existing) return { status: "not_visited" } as const;
 		if (existing.state === "completed")
@@ -41,6 +44,20 @@ export async function answerQuest(
 		await db.progress.update([route.id, stationId], {
 			state: "completed",
 			confirmed: false,
+		});
+		const id = crypto.randomUUID();
+		await db.outbox.add({
+			id,
+			event: {
+				id,
+				type: "quest_answer",
+				routeId: route.id,
+				stationId,
+				answer,
+				clientTs: Date.now(),
+			},
+			createdAt: Date.now(),
+			attempts: 0,
 		});
 		return { status: "correct", xp: route.xpRules.questXp } as const;
 	});

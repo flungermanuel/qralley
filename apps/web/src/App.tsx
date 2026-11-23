@@ -8,11 +8,12 @@ import {
 	useState,
 } from "react";
 import { createZxingScanner } from "./adapters/zxing-scanner";
-import type { LocalProgress, Profile, QurallyDb } from "./data/db";
+import type { LocalProgress, Profile, QurallyDb, SyncIssue } from "./data/db";
 import { acknowledgeSafety, getOrCreateProfile } from "./data/profile";
 import { answerQuest, summarizeProgress } from "./data/quest";
 import { type LoadResult, loadRoute } from "./data/route";
 import { processScan, type ScanOutcome } from "./data/scan";
+import { backoffDelay, syncOutbox } from "./data/sync";
 import {
 	ScannerError,
 	type ScannerFailure,
@@ -149,18 +150,95 @@ function scanMessage(outcome: ScanOutcome): string {
 	}
 }
 
-function useProgress(db: QurallyDb, routeId: string): LocalProgress[] {
-	const [rows, setRows] = useState<LocalProgress[]>([]);
+/** Subscribes to a Dexie query; `query` must be a stable (module-level) function. */
+function useLive<T>(
+	db: QurallyDb,
+	query: (db: QurallyDb) => Promise<T> | T,
+	initial: T,
+): T {
+	const [value, setValue] = useState<T>(initial);
 	useEffect(() => {
-		const subscription = liveQuery(() =>
-			db.progress.filter((r) => r.routeId === routeId).toArray(),
-		).subscribe({
-			next: setRows,
+		const subscription = liveQuery(() => query(db)).subscribe({
+			next: setValue,
 			error: () => {},
 		});
 		return () => subscription.unsubscribe();
-	}, [db, routeId]);
-	return rows;
+	}, [db, query]);
+	return value;
+}
+
+const queryProgress = (db: QurallyDb) =>
+	db.progress.filter((r) => r.routeId === ROUTE_ID).toArray();
+const queryPending = (db: QurallyDb) => db.outbox.count();
+const queryIssues = (db: QurallyDb) => db.issues.orderBy("id").toArray();
+const queryBundle = (db: QurallyDb) => db.routeBundles.get(ROUTE_ID);
+
+interface SyncState {
+	running: boolean;
+	failed: boolean;
+	syncNow: () => void;
+}
+
+/**
+ * Keeps the outbox flowing: syncs at start, when the device is online again,
+ * when the app becomes visible, after new events, and retries with backoff.
+ * Actions never wait for it; they only write to the local database.
+ */
+function useSync(
+	db: QurallyDb,
+	fetchFn: typeof fetch | undefined,
+	pending: number,
+): SyncState {
+	const [running, setRunning] = useState(false);
+	const [failed, setFailed] = useState(false);
+	const attempt = useRef(0);
+	const timer = useRef<number | undefined>(undefined);
+	const alive = useRef(true);
+	const runRef = useRef<() => void>(() => {});
+
+	const run = useCallback(async () => {
+		window.clearTimeout(timer.current);
+		setRunning(true);
+		const report = await syncOutbox(db, fetchFn);
+		if (!alive.current) return;
+		setRunning(false);
+		if (report.status === "offline" || report.status === "error") {
+			setFailed(true);
+			if (report.pending > 0) {
+				timer.current = window.setTimeout(
+					() => runRef.current(),
+					backoffDelay(attempt.current++),
+				);
+			}
+		} else {
+			attempt.current = 0;
+			setFailed(false);
+		}
+	}, [db, fetchFn]);
+	runRef.current = () => void run();
+
+	useEffect(() => {
+		alive.current = true;
+		const trigger = () => runRef.current();
+		const onVisible = () => document.visibilityState === "visible" && trigger();
+		trigger();
+		window.addEventListener("online", trigger);
+		document.addEventListener("visibilitychange", onVisible);
+		return () => {
+			alive.current = false;
+			window.clearTimeout(timer.current);
+			window.removeEventListener("online", trigger);
+			document.removeEventListener("visibilitychange", onVisible);
+		};
+	}, []);
+
+	const lastPending = useRef(0);
+	useEffect(() => {
+		if (pending > lastPending.current) runRef.current();
+		lastPending.current = pending;
+	}, [pending]);
+
+	return { running, failed, syncNow: () => runRef.current() };
 }
 
 interface RouteViewProps {
@@ -181,7 +259,11 @@ function RouteView({
 	const [result, setResult] = useState<LoadResult | null>(null);
 	const [view, setView] = useState<View>({ kind: "list" });
 	const [notice, setNotice] = useState<string | null>(null);
-	const rows = useProgress(db, ROUTE_ID);
+	const rows = useLive(db, queryProgress, [] as LocalProgress[]);
+	const pending = useLive(db, queryPending, 0);
+	const issues = useLive(db, queryIssues, [] as SyncIssue[]);
+	const storedBundle = useLive(db, queryBundle, undefined);
+	const sync = useSync(db, fetchFn, pending);
 
 	useEffect(() => {
 		let active = true;
@@ -199,7 +281,8 @@ function RouteView({
 		};
 	}, [db, fetchFn]);
 
-	const bundle = result?.bundle ?? null;
+	// The stored bundle is kept current by route loads and by sync (station states).
+	const bundle = storedBundle?.bundle ?? result?.bundle ?? null;
 
 	const handleOutcome = useCallback((outcome: ScanOutcome) => {
 		if (outcome.kind === "visited" || outcome.kind === "duplicate") {
@@ -240,6 +323,8 @@ function RouteView({
 				<p className="offline">{texts.route.offlineCached}</p>
 			)}
 			<p className="xp">{texts.xp.summary(summary.xp, summary.provisional)}</p>
+			<SyncStatus pending={pending} sync={sync} />
+			<SyncIssues db={db} bundle={bundle} issues={issues} />
 
 			{view.kind === "scan" && (
 				<ScanScreen
@@ -279,6 +364,60 @@ function RouteView({
 				</>
 			)}
 		</>
+	);
+}
+
+function SyncStatus({ pending, sync }: { pending: number; sync: SyncState }) {
+	if (pending === 0) return null;
+	return (
+		<div className="sync">
+			<p>{texts.sync.pending(pending)}</p>
+			{sync.running && <p>{texts.sync.running}</p>}
+			{!sync.running && sync.failed && <p>{texts.sync.failed}</p>}
+			<button type="button" onClick={sync.syncNow} disabled={sync.running}>
+				{texts.sync.now}
+			</button>
+		</div>
+	);
+}
+
+function SyncIssues({
+	db,
+	bundle,
+	issues,
+}: {
+	db: QurallyDb;
+	bundle: RouteBundle;
+	issues: SyncIssue[];
+}) {
+	if (issues.length === 0) return null;
+	return (
+		<div className="issues">
+			{issues.map((issue) => {
+				const station = bundle.route.stations.find(
+					(s) => s.id === issue.stationId,
+				);
+				const reason =
+					(texts.sync.reasons as Record<string, string>)[issue.reason] ??
+					texts.sync.reasonUnknown;
+				return (
+					<div key={issue.id} role="alert" className="issue">
+						<p>
+							{texts.sync.issue(
+								station?.title ?? texts.sync.unknownStation,
+								reason,
+							)}
+						</p>
+						<button
+							type="button"
+							onClick={() => void db.issues.delete(issue.id as number)}
+						>
+							{texts.sync.dismiss}
+						</button>
+					</div>
+				);
+			})}
+		</div>
 	);
 }
 

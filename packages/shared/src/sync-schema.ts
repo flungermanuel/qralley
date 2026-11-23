@@ -93,3 +93,42 @@ export interface SyncResult {
 	status: "accepted" | "duplicate" | "rejected";
 	reason?: string;
 }
+
+const progressStateSchema = z.object({
+	state: z.enum(["visited", "completed"]),
+	method: z.enum(["scan", "fallback"]),
+});
+
+/** Response of `POST /api/sync`. The client validates it before touching local data. */
+export const syncResponseSchema = z.object({
+	results: z.array(
+		z.object({
+			id: z.uuid(),
+			status: z.enum(["accepted", "duplicate", "rejected"]),
+			reason: z.string().optional(),
+		}),
+	),
+	/** Authoritative server progress per route. */
+	progress: z.record(
+		z.string(),
+		z.object({
+			totalXp: z.number(),
+			stations: z.record(z.string(), progressStateSchema),
+			badges: z.array(z.string()),
+			complete: z.boolean(),
+		}),
+	),
+	stationStates: z.record(
+		z.string(),
+		z.record(
+			z.string(),
+			z.object({
+				status: z.enum(["ok", "reported", "blocked"]),
+				reason: z.string().nullable(),
+			}),
+		),
+	),
+	serverTime: z.number(),
+});
+
+export type SyncResponse = z.infer<typeof syncResponseSchema>;

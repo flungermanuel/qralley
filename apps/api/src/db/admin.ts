@@ -1,6 +1,7 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import pg from "pg";
 import type { Db } from "./client";
+import { progress } from "./schema";
 
 /** Development and test helpers; never used by the production server. */
 
@@ -38,4 +39,9 @@ export async function resetDatabase(db: Db): Promise<void> {
 	await db.execute(
 		sql`truncate table reports, sync_events, badges_awarded, progress, players, station_state, route_versions restart identity cascade`,
 	);
+}
+
+/** Server-side progress rows of one player (used by e2e tests). */
+export function progressOfPlayer(db: Db, playerId: string) {
+	return db.select().from(progress).where(eq(progress.playerId, playerId));
 }

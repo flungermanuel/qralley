@@ -13,6 +13,7 @@ export type ScanOutcome =
  * Handles scanned QR text. The signature cannot be checked here (the key is
  * server-only), so a well-formed code for a station of this route counts as a
  * provisional visit; the server decides when the event is synced.
+ * Progress and outbox entry are written in one transaction (AK-SYNC-01).
  */
 export async function processScan(
 	db: QurallyDb,
@@ -34,15 +35,29 @@ export async function processScan(
 	if (stationStates[station.id]?.status === "blocked")
 		return { kind: "blocked", stationId: station.id };
 
-	return db.transaction("rw", db.progress, async () => {
+	return db.transaction("rw", db.progress, db.outbox, async () => {
 		const existing = await db.progress.get([route.id, station.id]);
 		if (existing) return { kind: "duplicate", stationId: station.id } as const;
+
 		await db.progress.add({
 			routeId: route.id,
 			stationId: station.id,
 			state: "visited",
 			method: "scan",
 			confirmed: false,
+		});
+		const id = crypto.randomUUID();
+		await db.outbox.add({
+			id,
+			event: {
+				id,
+				type: "scan",
+				routeId: route.id,
+				token: raw,
+				clientTs: Date.now(),
+			},
+			createdAt: Date.now(),
+			attempts: 0,
 		});
 		return {
 			kind: "visited",

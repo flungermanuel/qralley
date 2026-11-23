@@ -1,4 +1,4 @@
-import type { RouteBundle } from "@qurally/shared";
+import type { RouteBundle, SyncEvent } from "@qurally/shared";
 import Dexie, { type Table } from "dexie";
 
 /** Anonymous local profile; the only identity the app has (docs/SPEC.md §8.1). */
@@ -29,10 +29,33 @@ export interface LocalProgress {
 	confirmed: boolean;
 }
 
+/** An event waiting to be sent. `seq` gives the creation order. */
+export interface OutboxEntry {
+	seq?: number;
+	/** Client event id (idempotency key), identical to `event.id`. */
+	id: string;
+	event: SyncEvent;
+	createdAt: number;
+	attempts: number;
+	lastError?: string;
+}
+
+/** A rejected event the player should be told about. */
+export interface SyncIssue {
+	id?: number;
+	eventId: string;
+	stationId: string | null;
+	type: string;
+	reason: string;
+	createdAt: number;
+}
+
 export class QurallyDb extends Dexie {
 	profile!: Table<Profile, string>;
 	routeBundles!: Table<StoredBundle, string>;
 	progress!: Table<LocalProgress, [string, string]>;
+	outbox!: Table<OutboxEntry, number>;
+	issues!: Table<SyncIssue, number>;
 
 	constructor(name = "qurally") {
 		super(name);
@@ -40,6 +63,13 @@ export class QurallyDb extends Dexie {
 			profile: "id",
 			routeBundles: "routeId",
 			progress: "[routeId+stationId]",
+		});
+		this.version(2).stores({
+			profile: "id",
+			routeBundles: "routeId",
+			progress: "[routeId+stationId]",
+			outbox: "++seq, &id",
+			issues: "++id",
 		});
 	}
 }

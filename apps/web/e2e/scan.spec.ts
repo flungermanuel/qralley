@@ -1,6 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
+import { progressOfPlayer } from "../../api/src/db/admin";
+import { createDb } from "../../api/src/db/client";
 import { parseSigningKeys, signToken } from "../../api/src/domain/token";
-import { E2E_QR_SIGNING_KEYS } from "../e2e-env";
+import { E2E_DATABASE_URL, E2E_QR_SIGNING_KEYS } from "../e2e-env";
 import { texts } from "../src/texts";
 
 async function confirmSafety(page: Page) {
@@ -42,11 +44,14 @@ test("AK-SCAN-01 / AK-QUEST-01: scanning with the camera opens the station and t
 	await page.getByLabel("Golden").check();
 	await page.getByRole("button", { name: texts.quest.check }).click();
 	await expect(page.getByText(texts.quest.correct(40))).toBeVisible();
-	await expect(page.getByText(texts.xp.summary(50, true))).toBeVisible();
+	// Online, so the server confirms by itself and the XP lose their "provisional" label.
+	await expect(page.getByText(texts.xp.summary(50, false))).toBeVisible({
+		timeout: 15_000,
+	});
 
 	// Progress is stored locally and survives a reload.
 	await page.reload();
-	await expect(page.getByText(texts.xp.summary(50, true))).toBeVisible();
+	await expect(page.getByText(texts.xp.summary(50, false))).toBeVisible();
 	await expect(page.getByText(texts.station.stateCompleted)).toBeVisible();
 
 	// AK-PRIV-02: the QR decoder (WASM) comes from our own origin, nothing from a CDN.
@@ -91,4 +96,70 @@ test("AK-SCAN-09: opening a code URL directly (system camera) lands on the stati
 	await expect(page.getByText(texts.station.found(10))).toBeVisible();
 	// The code is no longer in the address bar, so a reload does not scan it again.
 	expect(new URL(page.url()).pathname).toBe("/");
+});
+
+/** Reads the anonymous player id from the app's IndexedDB. */
+function readPlayerId(page: Page): Promise<string> {
+	return page.evaluate(
+		() =>
+			new Promise<string>((resolve, reject) => {
+				const open = indexedDB.open("qurally");
+				open.onerror = () => reject(open.error);
+				open.onsuccess = () => {
+					const get = open.result
+						.transaction("profile")
+						.objectStore("profile")
+						.get("me");
+					get.onerror = () => reject(get.error);
+					get.onsuccess = () => resolve(get.result.playerId);
+				};
+			}),
+	);
+}
+
+test("AK-SYNC-02: scanned and answered offline, the server confirms everything once online", async ({
+	page,
+	context,
+}) => {
+	await page.goto("/");
+	await confirmSafety(page);
+	await expect(
+		page.getByRole("button", { name: texts.scan.open }),
+	).toBeVisible();
+	await waitForServiceWorker(page);
+
+	await context.setOffline(true);
+	await page.reload();
+	await expect(page.getByText(texts.route.offlineCached)).toBeVisible();
+
+	await page.getByRole("button", { name: texts.scan.open }).click();
+	await expect(
+		page.getByRole("heading", { name: "Goldenes Dachl" }),
+	).toBeVisible({ timeout: 20_000 });
+	await page.getByLabel("Golden").check();
+	await page.getByRole("button", { name: texts.quest.check }).click();
+
+	await expect(page.getByText(texts.xp.summary(50, true))).toBeVisible();
+	await expect(page.getByText(texts.sync.pending(2))).toBeVisible();
+
+	await context.setOffline(false);
+	await expect(page.getByText(texts.xp.summary(50, false))).toBeVisible({
+		timeout: 20_000,
+	});
+	await expect(page.getByText(texts.sync.pending(2))).toHaveCount(0);
+
+	const { db, close } = createDb(E2E_DATABASE_URL);
+	try {
+		const rows = await progressOfPlayer(db, await readPlayerId(page));
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			stationId: "goldenes-dachl",
+			state: "completed",
+			method: "scan",
+			scanXp: 10,
+			questXp: 40,
+		});
+	} finally {
+		await close();
+	}
 });
