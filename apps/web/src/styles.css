@@ -93,3 +93,50 @@ button {
 .station--reported {
 	border-color: #e0b84a;
 }
+
+.xp {
+	font-weight: 600;
+}
+
+.preview {
+	width: 100%;
+	max-height: 60vh;
+	border-radius: 0.75rem;
+	background: #000;
+	object-fit: cover;
+}
+
+.station-open {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	background: transparent;
+	color: inherit;
+	padding: 0;
+	text-align: left;
+}
+
+.station-title {
+	font-size: 1.1rem;
+	font-weight: 600;
+}
+
+.chip {
+	padding: 0.1rem 0.5rem;
+	border-radius: 1rem;
+	background: #e3f1ec;
+	color: var(--brand);
+	font-size: 0.8rem;
+}
+
+.option {
+	display: block;
+	padding: 0.4rem 0;
+}
+
+.safety-note {
+	color: var(--muted);
+	font-size: 0.9rem;
+}

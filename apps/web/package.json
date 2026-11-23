@@ -14,7 +14,8 @@
 		"@qurally/shared": "workspace:*",
 		"dexie": "^4.4.7",
 		"react": "^19.3.1",
-		"react-dom": "^19.3.1"
+		"react-dom": "^19.3.1",
+		"zxing-wasm": "^3.1.7"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.65.1",

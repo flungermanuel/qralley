@@ -55,12 +55,20 @@ const XML_ESCAPES: Record<string, string> = {
 const escapeXml = (s: string) =>
 	s.replace(/[&<>"']/g, (c) => XML_ESCAPES[c] ?? c);
 
+/** QR module matrix (error correction Q). Also used to render test videos. */
+export function createQrMatrix(
+	text: string,
+	level: "L" | "M" | "Q" | "H" = "Q",
+) {
+	return QRCode.create(text, { errorCorrectionLevel: level }).modules;
+}
+
 const QUIET_ZONE = 4;
 const CAPTION_HEIGHT = 7;
 
 /** Printable SVG: QR code (error correction Q) with a caption below. */
 export function renderQrSvg(url: string, caption: string): string {
-	const { modules } = QRCode.create(url, { errorCorrectionLevel: "Q" });
+	const modules = createQrMatrix(url);
 	const size = modules.size;
 	const total = size + QUIET_ZONE * 2;
 

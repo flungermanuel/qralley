@@ -25,6 +25,40 @@ export const texts = {
 		reportedHint:
 			"Der Code ist möglicherweise beschädigt. Ein Ersatzweg steht bereit.",
 	},
+	station: {
+		back: "Zurück zur Liste",
+		stateVisited: "Besucht",
+		stateCompleted: "Abgeschlossen",
+		found: (xp: number) => `Station gefunden! +${xp} XP (vorläufig)`,
+		completed: "Station abgeschlossen",
+	},
+	scan: {
+		open: "Station scannen",
+		title: "Code scannen",
+		walkingWarning: "Nicht beim Gehen aufs Handy schauen.",
+		starting: "Kamera startet …",
+		cancel: "Abbrechen",
+		toList: "Zur Stationsliste",
+		foreign: "Das ist kein qurally-Code.",
+		wrongRoute: "Dieser Code gehört zu einer anderen Route.",
+		invalidCode: "Dieser Code ist nicht (mehr) gültig.",
+		blocked: "Diese Station ist gesperrt.",
+		alreadyVisited: "Diese Station hast du schon besucht.",
+		permissionDenied:
+			"Die Kamera ist nicht erlaubt. Erlaube den Kamerazugriff in den Browser-Einstellungen und versuche es erneut.",
+		noCamera: "Es wurde keine Kamera gefunden.",
+		failed: "Die Kamera konnte nicht gestartet werden.",
+	},
+	quest: {
+		check: "Antwort prüfen",
+		answerLabel: "Deine Antwort",
+		wrong: "Leider falsch. Versuch es noch einmal.",
+		correct: (xp: number) => `Richtig! +${xp} XP (vorläufig)`,
+	},
+	xp: {
+		summary: (xp: number, provisional: boolean) =>
+			`${xp} XP${provisional ? " (vorläufig)" : ""}`,
+	},
 	update: {
 		message: "Neue Version verfügbar",
 		reload: "Neu laden",

@@ -1,6 +1,7 @@
-import { type RouteBundle, validateRoute } from "@qurally/shared";
+import { formatToken, type RouteBundle, validateRoute } from "@qurally/shared";
 import { exampleRoute } from "../../../packages/shared/test/fixtures";
 import { QurallyDb } from "../src/data/db";
+import type { ScannerError, ScannerPort } from "../src/ports/scanner";
 
 let counter = 0;
 
@@ -44,3 +45,45 @@ export function jsonResponse(
 
 export const offlineFetch: typeof fetch = () =>
 	Promise.reject(new TypeError("Failed to fetch"));
+
+/**
+ * A well-formed token. The client cannot check the signature (the key is server-only),
+ * so the MAC here is a dummy; the server decides at sync time.
+ */
+export function tokenFor(
+	stationId: string,
+	over: { routeId?: string; keyVersion?: number } = {},
+): string {
+	return formatToken(
+		{ routeId: "innsbruck-altstadt", stationId, keyVersion: 1, ...over },
+		new Uint8Array(16).fill(9),
+	);
+}
+
+export const qrUrl = (token: string) => `https://example.org/q/${token}`;
+
+/** Scanner double: tests decide when a code is "seen". */
+export class FakeScanner implements ScannerPort {
+	started = 0;
+	stopped = 0;
+	failWith: ScannerError | null = null;
+	private onDecode: ((text: string) => void) | null = null;
+
+	async start(
+		_video: HTMLVideoElement,
+		onDecode: (text: string) => void,
+	): Promise<void> {
+		this.started += 1;
+		if (this.failWith) throw this.failWith;
+		this.onDecode = onDecode;
+	}
+
+	stop(): void {
+		this.stopped += 1;
+		this.onDecode = null;
+	}
+
+	emit(text: string): void {
+		this.onDecode?.(text);
+	}
+}
