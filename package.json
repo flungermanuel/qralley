@@ -12,7 +12,9 @@
 		"db:up": "docker compose -f infra/docker-compose.yml up -d --wait db",
 		"db:migrate": "pnpm --filter @qurally/api db:migrate",
 		"route:publish": "tsx --env-file-if-exists=.env scripts/route-publish.ts",
-		"dev": "pnpm --filter @qurally/api dev"
+		"dev": "pnpm -r --parallel --if-present dev",
+		"build": "pnpm -r --if-present build",
+		"test:e2e": "pnpm --filter @qurally/web test:e2e"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.6.8",

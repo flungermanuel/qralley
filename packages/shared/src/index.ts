@@ -1,4 +1,5 @@
 export * from "./answer";
+export * from "./bundle-schema";
 export * from "./geo";
 export * from "./progress";
 export * from "./route-schema";
