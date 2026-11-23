@@ -1,5 +1,6 @@
 import { buildApp } from "./app";
 import { createDb } from "./db/client";
+import { parseSigningKeys } from "./domain/token";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -7,8 +8,11 @@ if (!databaseUrl) {
 	process.exit(1);
 }
 
+// Fails fast with a clear message when QR_SIGNING_KEYS is missing or too weak.
+const signingKeys = parseSigningKeys(process.env.QR_SIGNING_KEYS);
+
 const { db, close } = createDb(databaseUrl);
-const app = buildApp({ db });
+const app = buildApp({ db, signingKeys });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
 	process.on(signal, async () => {

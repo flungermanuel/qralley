@@ -3,7 +3,10 @@ import { distanceM } from "./geo";
 
 /** Single source of truth for the route data format (see docs/SPEC.md §6). */
 
-const slug = z.string().regex(/^[a-z0-9-]+$/, "must match [a-z0-9-]+");
+export const slugSchema = z
+	.string()
+	.regex(/^[a-z0-9-]+$/, "must match [a-z0-9-]+");
+const slug = slugSchema;
 const text = (max: number) => z.string().trim().min(1).max(max);
 
 const optionSchema = z.strictObject({ id: slug, label: text(120) });

@@ -1,22 +1,32 @@
 import { createHash } from "node:crypto";
 import type { Writable } from "node:stream";
-import { base64urlDecode } from "@qurally/shared";
-import { asc, desc, eq } from "drizzle-orm";
+import rateLimit from "@fastify/rate-limit";
+import { base64urlDecode, syncRequestSchema } from "@qurally/shared";
+import { eq } from "drizzle-orm";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Db } from "./db/client";
-import { players, routeVersions, stationState } from "./db/schema";
+import { players } from "./db/schema";
 import { authenticate, hashesEqual, hashSecret } from "./domain/auth";
+import { getLatestRoute, getStationStates } from "./domain/route-store";
+import { syncPlayer } from "./domain/sync";
+import type { SigningKeys } from "./domain/token";
 
 export interface AppOptions {
 	db: Db;
+	/** QR signing keys (see parseSigningKeys). Without keys every scan is rejected. */
+	signingKeys?: SigningKeys;
 	/** Log destination; defaults to stdout. Tests use it to inspect log content. */
 	logStream?: Writable;
 	/** Overrides LOG_LEVEL. */
 	logLevel?: string;
+	/** Requests per minute and client. */
+	rateLimit?: { playersPerMinute?: number; globalPerMinute?: number };
 }
 
 const MIN_SECRET_BYTES = 32;
+const DEFAULT_PLAYERS_PER_MINUTE = 20;
+const DEFAULT_GLOBAL_PER_MINUTE = 300;
 
 const slugParam = z.object({ id: z.string().regex(/^[a-z0-9-]+$/) });
 
@@ -29,8 +39,10 @@ const registerBody = z.strictObject({
 
 export function buildApp({
 	db,
+	signingKeys = new Map(),
 	logStream,
 	logLevel,
+	rateLimit: limits,
 }: AppOptions): FastifyInstance {
 	const app = Fastify({
 		bodyLimit: 64 * 1024,
@@ -51,6 +63,7 @@ export function buildApp({
 	app.setErrorHandler((error: FastifyError, _req, reply) => {
 		const status =
 			typeof error.statusCode === "number" ? error.statusCode : 500;
+		if (status === 429) return reply.code(429).send({ error: "rate_limited" });
 		if (status === 413)
 			return reply.code(413).send({ error: "payload_too_large" });
 		if (status >= 400 && status < 500)
@@ -59,85 +72,104 @@ export function buildApp({
 		return reply.code(500).send({ error: "internal_error" });
 	});
 
-	app.get("/api/health", async () => ({ status: "ok" }));
+	// Counters live in memory only; nothing about clients is persisted.
+	app.register(rateLimit, {
+		global: true,
+		max: limits?.globalPerMinute ?? DEFAULT_GLOBAL_PER_MINUTE,
+		timeWindow: "1 minute",
+		errorResponseBuilder: () => ({ statusCode: 429, error: "rate_limited" }),
+	});
 
-	app.get("/api/routes/:id", async (req, reply) => {
-		const params = slugParam.safeParse(req.params);
-		if (!params.success)
-			return reply.code(400).send({ error: "invalid_request" });
-		const routeId = params.data.id;
+	// Routes are registered in a plugin so they are loaded after the rate limiter.
+	app.register(async (api) => {
+		api.get("/api/health", async () => ({ status: "ok" }));
 
-		const [latest] = await db
-			.select()
-			.from(routeVersions)
-			.where(eq(routeVersions.routeId, routeId))
-			.orderBy(desc(routeVersions.version))
-			.limit(1);
-		if (!latest) return reply.code(404).send({ error: "not_found" });
+		api.get("/api/routes/:id", async (req, reply) => {
+			const params = slugParam.safeParse(req.params);
+			if (!params.success)
+				return reply.code(400).send({ error: "invalid_request" });
 
-		const route = latest.content as { stations: { id: string }[] };
-		const stationIds = new Set(route.stations.map((s) => s.id));
-		const rows = await db
-			.select()
-			.from(stationState)
-			.where(eq(stationState.routeId, routeId))
-			.orderBy(asc(stationState.stationId));
-		const stationStates = Object.fromEntries(
-			rows
-				.filter((r) => stationIds.has(r.stationId))
-				.map((r) => [
-					r.stationId,
-					{ status: r.status, reason: r.statusReason },
-				]),
+			const latest = await getLatestRoute(db, params.data.id);
+			if (!latest) return reply.code(404).send({ error: "not_found" });
+			const stationStates = await getStationStates(db, latest.route);
+
+			const etag = `"${createHash("sha256")
+				.update(latest.contentHash)
+				.update(JSON.stringify(stationStates))
+				.digest("hex")
+				.slice(0, 32)}"`;
+			reply.header("etag", etag).header("cache-control", "no-cache");
+			if (req.headers["if-none-match"] === etag) return reply.code(304).send();
+
+			return {
+				route: latest.route,
+				stationStates,
+				bundleVersion: latest.contentHash,
+				serverTime: Date.now(),
+			};
+		});
+
+		api.post(
+			"/api/players",
+			{
+				config: {
+					rateLimit: {
+						max: limits?.playersPerMinute ?? DEFAULT_PLAYERS_PER_MINUTE,
+						timeWindow: "1 minute",
+					},
+				},
+			},
+			async (req, reply) => {
+				const body = registerBody.safeParse(req.body);
+				if (!body.success)
+					return reply.code(400).send({ error: "invalid_request" });
+				const { playerId, secret } = body.data;
+				const secretHash = hashSecret(secret);
+
+				const inserted = await db
+					.insert(players)
+					.values({ id: playerId, secretHash })
+					.onConflictDoNothing()
+					.returning({ id: players.id });
+				if (inserted.length > 0) return reply.code(201).send({ created: true });
+
+				const [existing] = await db
+					.select({ secretHash: players.secretHash })
+					.from(players)
+					.where(eq(players.id, playerId))
+					.limit(1);
+				if (existing && hashesEqual(existing.secretHash, secretHash)) {
+					return reply.code(200).send({ created: false });
+				}
+				return reply.code(409).send({ error: "conflict" });
+			},
 		);
 
-		const etag = `"${createHash("sha256")
-			.update(latest.contentHash)
-			.update(JSON.stringify(stationStates))
-			.digest("hex")
-			.slice(0, 32)}"`;
-		reply.header("etag", etag).header("cache-control", "no-cache");
-		if (req.headers["if-none-match"] === etag) return reply.code(304).send();
+		api.delete("/api/players/me", async (req, reply) => {
+			const playerId = await authenticate(db, req.headers.authorization);
+			if (!playerId) return reply.code(401).send({ error: "unauthorized" });
+			// Cascades to progress, badges and sync events; reports keep existing, unlinked.
+			await db.delete(players).where(eq(players.id, playerId));
+			return reply.code(204).send();
+		});
 
-		return {
-			route: latest.content,
-			stationStates,
-			bundleVersion: latest.contentHash,
-			serverTime: Date.now(),
-		};
-	});
+		api.post("/api/sync", async (req, reply) => {
+			const playerId = await authenticate(db, req.headers.authorization);
+			if (!playerId) return reply.code(401).send({ error: "unauthorized" });
 
-	app.post("/api/players", async (req, reply) => {
-		const body = registerBody.safeParse(req.body);
-		if (!body.success)
-			return reply.code(400).send({ error: "invalid_request" });
-		const { playerId, secret } = body.data;
-		const secretHash = hashSecret(secret);
+			const body = syncRequestSchema.safeParse(req.body);
+			if (!body.success)
+				return reply.code(400).send({ error: "invalid_request" });
 
-		const inserted = await db
-			.insert(players)
-			.values({ id: playerId, secretHash })
-			.onConflictDoNothing()
-			.returning({ id: players.id });
-		if (inserted.length > 0) return reply.code(201).send({ created: true });
-
-		const [existing] = await db
-			.select({ secretHash: players.secretHash })
-			.from(players)
-			.where(eq(players.id, playerId))
-			.limit(1);
-		if (existing && hashesEqual(existing.secretHash, secretHash)) {
-			return reply.code(200).send({ created: false });
-		}
-		return reply.code(409).send({ error: "conflict" });
-	});
-
-	app.delete("/api/players/me", async (req, reply) => {
-		const playerId = await authenticate(db, req.headers.authorization);
-		if (!playerId) return reply.code(401).send({ error: "unauthorized" });
-		// Cascades to progress, badges and sync events; reports keep existing, unlinked.
-		await db.delete(players).where(eq(players.id, playerId));
-		return reply.code(204).send();
+			const response = await syncPlayer(
+				db,
+				signingKeys,
+				playerId,
+				body.data.events,
+			);
+			if (!response) return reply.code(401).send({ error: "unauthorized" });
+			return response;
+		});
 	});
 
 	return app;

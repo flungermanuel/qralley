@@ -15,7 +15,7 @@ const { db, close } = openTestDb();
 let app: FastifyInstance;
 
 beforeAll(async () => {
-	app = buildApp({ db });
+	app = buildApp({ db, rateLimit: { playersPerMinute: 10_000 } });
 	await app.ready();
 });
 afterAll(async () => {
