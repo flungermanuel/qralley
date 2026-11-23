@@ -1,0 +1,100 @@
+{
+	"schemaVersion": 1,
+	"id": "innsbruck-altstadt",
+	"version": 1,
+	"locale": "de-AT",
+	"title": "Altstadt-Runde Innsbruck",
+	"description": "Drei Orte, ein Spaziergang, ca. 45 Minuten. Lauf in deinem Tempo.",
+	"region": { "name": "Innsbruck", "bbox": [11.36, 47.24, 11.43, 47.29] },
+	"order": "free",
+	"xpRules": { "scanXp": 10, "questXp": 40, "fallbackXpFactor": 0.5 },
+	"reward": {
+		"badge": {
+			"id": "altstadt-entdecker",
+			"title": "Altstadt-Entdecker",
+			"description": "Alle Stationen der Altstadt-Runde gefunden.",
+			"icon": "badge-altstadt.svg"
+		},
+		"requires": "all_unblocked_stations"
+	},
+	"stations": [
+		{
+			"id": "goldenes-dachl",
+			"title": "Goldenes Dachl",
+			"hint": "Am Ende der Herzog-Friedrich-Straße. PLATZHALTER: Position des Codes vor Ort festlegen.",
+			"location": { "lat": 47.2685, "lng": 11.3933 },
+			"terrain": "plaza",
+			"safetyNote": "Fußgängerzone. Auf Radfahrer und Lieferverkehr achten.",
+			"qrKeyVersion": 1,
+			"quest": {
+				"type": "choice",
+				"prompt": "Welche Farbe hat das Dach? (Platzhalter)",
+				"options": [
+					{ "id": "a", "label": "Golden" },
+					{ "id": "b", "label": "Rot" },
+					{ "id": "c", "label": "Grün" }
+				],
+				"answer": "a",
+				"explanation": "Das Dach besteht aus feuervergoldeten Kupferschindeln."
+			},
+			"fallback": {
+				"enabled": true,
+				"radiusM": 40,
+				"question": {
+					"type": "text",
+					"prompt": "Wie viele Bogenöffnungen hat der Erker im ersten Stock? (Platzhalter, vor Ort prüfen)",
+					"answer": ["3"],
+					"explanation": "Platzhalterfrage."
+				}
+			}
+		},
+		{
+			"id": "annasaeule",
+			"title": "Annasäule",
+			"hint": "Maria-Theresien-Straße. PLATZHALTER: Position des Codes vor Ort festlegen.",
+			"location": { "lat": 47.264, "lng": 11.3947 },
+			"terrain": "plaza",
+			"safetyNote": "Straßenbahn und Straßenquerung. Nur an der Ampel queren.",
+			"qrKeyVersion": 1,
+			"quest": {
+				"type": "text",
+				"prompt": "Welche Jahreszahl steht am Sockel? (Platzhalter)",
+				"answer": ["1706"],
+				"explanation": "Platzhalter, vor Ort prüfen."
+			},
+			"fallback": {
+				"enabled": true,
+				"radiusM": 40,
+				"question": {
+					"type": "choice",
+					"prompt": "Welche Figur steht oben auf der Säule? (Platzhalter)",
+					"options": [
+						{ "id": "a", "label": "Eine Frau" },
+						{ "id": "b", "label": "Ein Ritter" }
+					],
+					"answer": "a",
+					"explanation": "Platzhalterfrage."
+				}
+			}
+		},
+		{
+			"id": "hofkirche",
+			"title": "Hofkirche",
+			"hint": "Nahe der Hofburg. PLATZHALTER: Position des Codes vor Ort festlegen.",
+			"location": { "lat": 47.2687, "lng": 11.3957 },
+			"terrain": "plaza",
+			"safetyNote": "Fußgängerzone, wenig Verkehr. Auf Radfahrer achten.",
+			"qrKeyVersion": 1,
+			"quest": {
+				"type": "text",
+				"prompt": "Wie heißt die Straße vor dem Eingang? (Platzhalter)",
+				"answer": ["Universitätsstraße"],
+				"explanation": "Platzhalter, vor Ort prüfen."
+			},
+			"fallback": {
+				"enabled": false,
+				"radiusM": 40
+			}
+		}
+	]
+}
