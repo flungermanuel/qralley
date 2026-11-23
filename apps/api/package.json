@@ -1,0 +1,16 @@
+{
+	"name": "@qurally/api",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@qurally/shared": "workspace:*",
+		"qrcode": "^1.5.4"
+	},
+	"devDependencies": {
+		"@types/qrcode": "^1.5.6"
+	}
+}

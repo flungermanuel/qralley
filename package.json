@@ -7,7 +7,8 @@
 		"lint": "biome check .",
 		"format": "biome format --write .",
 		"typecheck": "pnpm -r --if-present typecheck",
-		"route:validate": "tsx scripts/route-validate.ts"
+		"route:validate": "tsx scripts/route-validate.ts",
+		"qr:generate": "tsx --env-file-if-exists=.env scripts/qr-generate.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.6.8",
