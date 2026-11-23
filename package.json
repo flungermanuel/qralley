@@ -14,7 +14,8 @@
 		"route:publish": "tsx --env-file-if-exists=.env scripts/route-publish.ts",
 		"dev": "pnpm -r --parallel --if-present dev",
 		"build": "pnpm -r --if-present build",
-		"test:e2e": "pnpm --filter @qurally/web test:e2e"
+		"test:e2e": "pnpm --filter @qurally/web test:e2e",
+		"check:layers": "node scripts/check-layers.mjs"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.6.8",
@@ -23,5 +24,6 @@
 		"tsx": "^4.23.15",
 		"typescript": "^7.0.2",
 		"vitest": "^5.1.1"
-	}
+	},
+	"packageManager": "pnpm@12.23.0"
 }
