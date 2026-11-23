@@ -45,13 +45,17 @@ test("AK-SCAN-01 / AK-QUEST-01: scanning with the camera opens the station and t
 	await page.getByRole("button", { name: texts.quest.check }).click();
 	await expect(page.getByText(texts.quest.correct(40))).toBeVisible();
 	// Online, so the server confirms by itself and the XP lose their "provisional" label.
-	await expect(page.getByText(texts.xp.summary(50, false))).toBeVisible({
+	await expect(
+		page.getByText(texts.xp.summary(50, false), { exact: true }),
+	).toBeVisible({
 		timeout: 15_000,
 	});
 
 	// Progress is stored locally and survives a reload.
 	await page.reload();
-	await expect(page.getByText(texts.xp.summary(50, false))).toBeVisible();
+	await expect(
+		page.getByText(texts.xp.summary(50, false), { exact: true }),
+	).toBeVisible();
 	await expect(page.getByText(texts.station.stateCompleted)).toBeVisible();
 
 	// AK-PRIV-02: the QR decoder (WASM) comes from our own origin, nothing from a CDN.
@@ -139,11 +143,15 @@ test("AK-SYNC-02: scanned and answered offline, the server confirms everything o
 	await page.getByLabel("Golden").check();
 	await page.getByRole("button", { name: texts.quest.check }).click();
 
-	await expect(page.getByText(texts.xp.summary(50, true))).toBeVisible();
+	await expect(
+		page.getByText(texts.xp.summary(50, true), { exact: true }),
+	).toBeVisible();
 	await expect(page.getByText(texts.sync.pending(2))).toBeVisible();
 
 	await context.setOffline(false);
-	await expect(page.getByText(texts.xp.summary(50, false))).toBeVisible({
+	await expect(
+		page.getByText(texts.xp.summary(50, false), { exact: true }),
+	).toBeVisible({
 		timeout: 20_000,
 	});
 	await expect(page.getByText(texts.sync.pending(2))).toHaveCount(0);

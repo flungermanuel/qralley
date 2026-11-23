@@ -59,6 +59,53 @@ export const texts = {
 		summary: (xp: number, provisional: boolean) =>
 			`${xp} XP${provisional ? " (vorläufig)" : ""}`,
 	},
+	fallback: {
+		start: "Code kaputt oder nicht auffindbar?",
+		intro:
+			"Wenn du an der Station stehst, kannst du sie mit deinem Standort und einer Frage vor Ort freischalten. Dafür gibt es etwas weniger XP.",
+		check: "Standort prüfen",
+		locating: "Standort wird bestimmt …",
+		permissionDenied:
+			"Der Standort ist nicht erlaubt. Erlaube den Standortzugriff in den Browser-Einstellungen und versuche es erneut.",
+		unavailable:
+			"Dein Standort konnte nicht bestimmt werden. Geh an eine offenere Stelle und versuche es erneut.",
+		inaccurate:
+			"Dein Standort ist zu ungenau. Geh an eine offenere Stelle und versuche es erneut.",
+		tooFar:
+			"Du bist zu weit von der Station entfernt. Geh näher heran und versuche es erneut.",
+		failed: "Das hat nicht geklappt. Bitte versuche es noch einmal.",
+		done: (xp: number) => `Station abgeschlossen. +${xp} XP (vorläufig)`,
+	},
+	report: {
+		unsafe: "Ort unsicher melden",
+		other: "Anderes Problem melden",
+		kindLegend: "Was ist das Problem?",
+		kinds: {
+			code_damaged: "Code beschädigt",
+			code_missing: "Code fehlt",
+			other: "Sonstiges",
+		},
+		noteLabel: "Kurze Beschreibung (optional)",
+		send: "Meldung senden",
+		thanks: "Danke! Wir prüfen die Station.",
+		alreadySent: "Das hast du schon gemeldet. Wir kümmern uns darum.",
+		failed: "Die Meldung konnte nicht gespeichert werden.",
+	},
+	badge: {
+		heading: "Abzeichen",
+		confirmed: "Abzeichen erhalten!",
+		provisional: "Vorläufig – wird bestätigt, sobald du online bist.",
+	},
+	account: {
+		delete: "Meine Daten löschen",
+		confirmText:
+			"Dein Fortschritt und dein Abzeichen werden auf diesem Gerät und auf dem Server gelöscht. Noch nicht gesendete Einträge gehen verloren. Das kann nicht rückgängig gemacht werden.",
+		confirm: "Endgültig löschen",
+		cancel: "Abbrechen",
+		offline:
+			"Zum Löschen brauchst du eine Internetverbindung. Deine Daten bleiben vorerst erhalten.",
+		error: "Das Löschen hat nicht geklappt. Bitte versuche es später erneut.",
+	},
 	sync: {
 		pending: (n: number) =>
 			n === 1

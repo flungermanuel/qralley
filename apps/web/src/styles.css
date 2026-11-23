@@ -140,3 +140,44 @@ button {
 	color: var(--muted);
 	font-size: 0.9rem;
 }
+
+.badge {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	margin: 0.75rem 0;
+	padding: 0.75rem 1rem;
+	border: 2px solid var(--brand);
+	border-radius: 0.75rem;
+}
+
+.badge h2,
+.badge p {
+	margin: 0.1rem 0;
+}
+
+button.secondary {
+	background: transparent;
+	color: var(--brand);
+	border: 1px solid var(--brand);
+}
+
+button.danger {
+	background: #b3261e;
+}
+
+.report,
+.fallback,
+.account {
+	margin-top: 1rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+textarea {
+	display: block;
+	width: 100%;
+	min-height: 4rem;
+	font: inherit;
+}

@@ -29,6 +29,12 @@ export interface LocalProgress {
 	confirmed: boolean;
 }
 
+/** A badge the server has awarded (confirmed). */
+export interface LocalBadge {
+	routeId: string;
+	badgeId: string;
+}
+
 /** An event waiting to be sent. `seq` gives the creation order. */
 export interface OutboxEntry {
 	seq?: number;
@@ -56,6 +62,7 @@ export class QurallyDb extends Dexie {
 	progress!: Table<LocalProgress, [string, string]>;
 	outbox!: Table<OutboxEntry, number>;
 	issues!: Table<SyncIssue, number>;
+	badges!: Table<LocalBadge, [string, string]>;
 
 	constructor(name = "qurally") {
 		super(name);
@@ -70,6 +77,14 @@ export class QurallyDb extends Dexie {
 			progress: "[routeId+stationId]",
 			outbox: "++seq, &id",
 			issues: "++id",
+		});
+		this.version(3).stores({
+			profile: "id",
+			routeBundles: "routeId",
+			progress: "[routeId+stationId]",
+			outbox: "++seq, &id",
+			issues: "++id",
+			badges: "[routeId+badgeId]",
 		});
 	}
 }

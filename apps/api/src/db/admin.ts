@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import pg from "pg";
 import type { Db } from "./client";
-import { progress } from "./schema";
+import { players, progress, reports } from "./schema";
 
 /** Development and test helpers; never used by the production server. */
 
@@ -44,4 +44,18 @@ export async function resetDatabase(db: Db): Promise<void> {
 /** Server-side progress rows of one player (used by e2e tests). */
 export function progressOfPlayer(db: Db, playerId: string) {
 	return db.select().from(progress).where(eq(progress.playerId, playerId));
+}
+
+/** Reports sent by one player (used by e2e tests). */
+export function reportsOfPlayer(db: Db, playerId: string) {
+	return db.select().from(reports).where(eq(reports.playerId, playerId));
+}
+
+/** Does the player still exist on the server? (used by e2e tests) */
+export async function playerExists(db: Db, playerId: string): Promise<boolean> {
+	const rows = await db
+		.select({ id: players.id })
+		.from(players)
+		.where(eq(players.id, playerId));
+	return rows.length > 0;
 }

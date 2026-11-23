@@ -33,7 +33,7 @@ export default defineConfig({
 	use: {
 		baseURL,
 		serviceWorkers: "allow",
-		permissions: ["camera"],
+		permissions: ["camera", "geolocation"],
 		launchOptions: {
 			args: [
 				"--use-fake-device-for-media-stream",

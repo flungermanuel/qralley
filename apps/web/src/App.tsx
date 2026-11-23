@@ -1,4 +1,9 @@
-import type { Quest, RouteBundle, Station } from "@qurally/shared";
+import {
+	MAX_REPORT_NOTE_LENGTH,
+	type Quest,
+	type RouteBundle,
+	type Station,
+} from "@qurally/shared";
 import { liveQuery } from "dexie";
 import {
 	type ReactNode,
@@ -7,13 +12,29 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { createBrowserGeolocation } from "./adapters/browser-geolocation";
 import { createZxingScanner } from "./adapters/zxing-scanner";
-import type { LocalProgress, Profile, QurallyDb, SyncIssue } from "./data/db";
+import { deleteAllData } from "./data/account";
+import { type BadgeStatus, badgeStatus } from "./data/badge";
+import type {
+	LocalBadge,
+	LocalProgress,
+	Profile,
+	QurallyDb,
+	SyncIssue,
+} from "./data/db";
+import { answerFallback, checkFallbackLocation } from "./data/fallback";
 import { acknowledgeSafety, getOrCreateProfile } from "./data/profile";
 import { answerQuest, summarizeProgress } from "./data/quest";
+import { queueReport, type ReportKind } from "./data/report";
 import { type LoadResult, loadRoute } from "./data/route";
 import { processScan, type ScanOutcome } from "./data/scan";
 import { backoffDelay, syncOutbox } from "./data/sync";
+import {
+	GeolocationError,
+	type GeolocationPort,
+	type GeoPosition,
+} from "./ports/geolocation";
 import {
 	ScannerError,
 	type ScannerFailure,
@@ -30,6 +51,7 @@ export interface AppProps {
 	updateAvailable: boolean;
 	onUpdate: () => void;
 	createScanner?: () => ScannerPort;
+	geolocation?: GeolocationPort;
 	/** Text of a code that opened the app (system camera -> /q/<token>). Defaults to the current URL. */
 	initialScanText?: string | null;
 }
@@ -47,6 +69,7 @@ export function App({
 	updateAvailable,
 	onUpdate,
 	createScanner = createZxingScanner,
+	geolocation = browserGeolocation,
 	initialScanText,
 }: AppProps) {
 	const [profile, setProfile] = useState<Profile | null>(null);
@@ -54,13 +77,23 @@ export function App({
 		() => initialScanText ?? deepLinkText(),
 	);
 
+	const [epoch, setEpoch] = useState(0);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: epoch re-reads the profile after "delete my data"
 	useEffect(() => {
 		let active = true;
 		getOrCreateProfile(db).then((p) => active && setProfile(p));
 		return () => {
 			active = false;
 		};
-	}, [db]);
+	}, [db, epoch]);
+
+	// After "delete my data" the app starts over with a fresh anonymous profile.
+	const onDeleted = useCallback(() => {
+		setProfile(null);
+		setPendingScan(null);
+		setEpoch((e) => e + 1);
+	}, []);
 
 	const acknowledge = useCallback(async () => {
 		await acknowledgeSafety(db);
@@ -91,8 +124,10 @@ export function App({
 						db={db}
 						fetchFn={fetchFn}
 						createScanner={createScanner}
+						geolocation={geolocation}
 						pendingScan={pendingScan}
 						onScanConsumed={consumeScan}
+						onDeleted={onDeleted}
 					/>
 				)}
 			</main>
@@ -172,6 +207,9 @@ const queryProgress = (db: QurallyDb) =>
 const queryPending = (db: QurallyDb) => db.outbox.count();
 const queryIssues = (db: QurallyDb) => db.issues.orderBy("id").toArray();
 const queryBundle = (db: QurallyDb) => db.routeBundles.get(ROUTE_ID);
+const queryBadges = (db: QurallyDb) =>
+	db.badges.filter((b) => b.routeId === ROUTE_ID).toArray();
+const browserGeolocation = createBrowserGeolocation();
 
 interface SyncState {
 	running: boolean;
@@ -245,16 +283,20 @@ interface RouteViewProps {
 	db: QurallyDb;
 	fetchFn?: typeof fetch;
 	createScanner: () => ScannerPort;
+	geolocation: GeolocationPort;
 	pendingScan: string | null;
 	onScanConsumed: () => void;
+	onDeleted: () => void;
 }
 
 function RouteView({
 	db,
 	fetchFn,
 	createScanner,
+	geolocation,
 	pendingScan,
 	onScanConsumed,
+	onDeleted,
 }: RouteViewProps) {
 	const [result, setResult] = useState<LoadResult | null>(null);
 	const [view, setView] = useState<View>({ kind: "list" });
@@ -263,6 +305,7 @@ function RouteView({
 	const pending = useLive(db, queryPending, 0);
 	const issues = useLive(db, queryIssues, [] as SyncIssue[]);
 	const storedBundle = useLive(db, queryBundle, undefined);
+	const badges = useLive(db, queryBadges, [] as LocalBadge[]);
 	const sync = useSync(db, fetchFn, pending);
 
 	useEffect(() => {
@@ -325,6 +368,13 @@ function RouteView({
 			<p className="xp">{texts.xp.summary(summary.xp, summary.provisional)}</p>
 			<SyncStatus pending={pending} sync={sync} />
 			<SyncIssues db={db} bundle={bundle} issues={issues} />
+			<BadgeCard
+				status={badgeStatus(
+					bundle,
+					rows,
+					badges.map((b) => b.badgeId),
+				)}
+			/>
 
 			{view.kind === "scan" && (
 				<ScanScreen
@@ -339,6 +389,7 @@ function RouteView({
 				<StationView
 					db={db}
 					bundle={bundle}
+					geolocation={geolocation}
 					stationId={view.stationId}
 					rows={rows}
 					notice={view.notice}
@@ -361,6 +412,7 @@ function RouteView({
 						}}
 					/>
 					<p className="tip">{texts.route.installTip}</p>
+					<DeleteData db={db} fetchFn={fetchFn} onDeleted={onDeleted} />
 				</>
 			)}
 		</>
@@ -579,6 +631,7 @@ function StatusNote({
 interface StationViewProps {
 	db: QurallyDb;
 	bundle: RouteBundle;
+	geolocation: GeolocationPort;
 	stationId: string;
 	rows: LocalProgress[];
 	notice?: string;
@@ -588,6 +641,7 @@ interface StationViewProps {
 function StationView({
 	db,
 	bundle,
+	geolocation,
 	stationId,
 	rows,
 	notice,
@@ -623,6 +677,18 @@ function StationView({
 				<QuestForm key={station.id} quest={station.quest} onSubmit={submit} />
 			)}
 			{feedback && <p role="status">{feedback}</p>}
+			{playable &&
+				!progress &&
+				station.fallback.enabled &&
+				station.fallback.question && (
+					<FallbackPanel
+						db={db}
+						bundle={bundle}
+						station={station}
+						geolocation={geolocation}
+						onDone={(xp) => setFeedback(texts.fallback.done(xp))}
+					/>
+				)}
 			{playable && progress?.state === "completed" && (
 				<>
 					<p>
@@ -631,6 +697,287 @@ function StationView({
 					{station.quest.explanation && <p>{station.quest.explanation}</p>}
 				</>
 			)}
+			<ReportSection db={db} bundle={bundle} stationId={station.id} />
+		</section>
+	);
+}
+
+function BadgeCard({ status }: { status: BadgeStatus }) {
+	if (status.state === "none") return null;
+	const { badge } = status;
+	return (
+		<section className="badge" aria-label={texts.badge.heading}>
+			<img src={`/badges/${badge.icon}`} alt="" width={64} height={64} />
+			<div>
+				<h2>{badge.title}</h2>
+				<p>{badge.description}</p>
+				<p>
+					<strong>
+						{status.state === "confirmed"
+							? texts.badge.confirmed
+							: texts.badge.provisional}
+					</strong>
+				</p>
+			</div>
+		</section>
+	);
+}
+
+type FallbackStep =
+	| { kind: "idle" }
+	| { kind: "intro"; problem?: string }
+	| { kind: "locating" }
+	| { kind: "verified"; position: GeoPosition };
+
+interface FallbackPanelProps {
+	db: QurallyDb;
+	bundle: RouteBundle;
+	station: Station;
+	geolocation: GeolocationPort;
+	onDone: (xp: number) => void;
+}
+
+/** Broken or missing code: prove presence by position, then answer an on-site question. */
+function FallbackPanel({
+	db,
+	bundle,
+	station,
+	geolocation,
+	onDone,
+}: FallbackPanelProps) {
+	const [step, setStep] = useState<FallbackStep>({ kind: "idle" });
+	const [feedback, setFeedback] = useState<string | null>(null);
+	const question = station.fallback.question;
+	if (!question) return null;
+
+	const check = async () => {
+		setFeedback(null);
+		setStep({ kind: "locating" });
+		try {
+			const position = await geolocation.getPosition();
+			const result = checkFallbackLocation(bundle, station.id, position);
+			if (result.ok) setStep({ kind: "verified", position });
+			else if (result.reason === "too_far")
+				setStep({ kind: "intro", problem: texts.fallback.tooFar });
+			else if (result.reason === "accuracy_too_low")
+				setStep({ kind: "intro", problem: texts.fallback.inaccurate });
+			else setStep({ kind: "intro", problem: texts.fallback.failed });
+		} catch (err) {
+			const denied =
+				err instanceof GeolocationError && err.reason === "permission_denied";
+			setStep({
+				kind: "intro",
+				problem: denied
+					? texts.fallback.permissionDenied
+					: texts.fallback.unavailable,
+			});
+		}
+	};
+
+	const submit = async (answer: string) => {
+		if (step.kind !== "verified") return;
+		const result = await answerFallback(
+			db,
+			bundle,
+			station.id,
+			step.position,
+			answer,
+		);
+		if (result.status === "completed") onDone(result.xp);
+		else if (result.status === "incorrect") setFeedback(texts.quest.wrong);
+		else if (result.status === "too_far")
+			setStep({ kind: "intro", problem: texts.fallback.tooFar });
+		else if (result.status === "accuracy_too_low")
+			setStep({ kind: "intro", problem: texts.fallback.inaccurate });
+		else setFeedback(texts.fallback.failed);
+	};
+
+	if (step.kind === "idle") {
+		return (
+			<button
+				type="button"
+				className="secondary"
+				onClick={() => setStep({ kind: "intro" })}
+			>
+				{texts.fallback.start}
+			</button>
+		);
+	}
+
+	return (
+		<section className="fallback">
+			<h3>{texts.fallback.start}</h3>
+			{step.kind === "verified" ? (
+				<>
+					<QuestForm quest={question} onSubmit={submit} />
+					{feedback && <p role="status">{feedback}</p>}
+				</>
+			) : (
+				<>
+					<p>{texts.fallback.intro}</p>
+					{step.kind === "intro" && step.problem && (
+						<p role="alert">{step.problem}</p>
+					)}
+					{step.kind === "locating" && <p>{texts.fallback.locating}</p>}
+					<button
+						type="button"
+						onClick={check}
+						disabled={step.kind === "locating"}
+					>
+						{texts.fallback.check}
+					</button>
+				</>
+			)}
+		</section>
+	);
+}
+
+const OTHER_REPORT_KINDS = ["code_damaged", "code_missing", "other"] as const;
+
+/** "Ort unsicher" is a single tap; other problems go through a small form. */
+function ReportSection({
+	db,
+	bundle,
+	stationId,
+}: {
+	db: QurallyDb;
+	bundle: RouteBundle;
+	stationId: string;
+}) {
+	const [open, setOpen] = useState(false);
+	const [kind, setKind] = useState<ReportKind>("code_damaged");
+	const [note, setNote] = useState("");
+	const [message, setMessage] = useState<string | null>(null);
+
+	const send = async (reportKind: ReportKind, text?: string) => {
+		const result = await queueReport(db, bundle, stationId, reportKind, text);
+		setMessage(
+			result.status === "queued"
+				? texts.report.thanks
+				: result.status === "already_pending"
+					? texts.report.alreadySent
+					: texts.report.failed,
+		);
+		if (result.status === "queued") {
+			setOpen(false);
+			setNote("");
+		}
+	};
+
+	return (
+		<div className="report">
+			<button
+				type="button"
+				className="danger"
+				onClick={() => void send("unsafe")}
+			>
+				{texts.report.unsafe}
+			</button>
+			<button
+				type="button"
+				className="secondary"
+				onClick={() => setOpen(!open)}
+			>
+				{texts.report.other}
+			</button>
+			{open && (
+				<form
+					onSubmit={(e) => {
+						e.preventDefault();
+						void send(kind, note);
+					}}
+				>
+					<fieldset>
+						<legend>{texts.report.kindLegend}</legend>
+						{OTHER_REPORT_KINDS.map((k) => (
+							<label key={k} className="option">
+								<input
+									type="radio"
+									name="report-kind"
+									checked={kind === k}
+									onChange={() => setKind(k)}
+								/>
+								{texts.report.kinds[k]}
+							</label>
+						))}
+					</fieldset>
+					<label>
+						{texts.report.noteLabel}
+						<textarea
+							value={note}
+							maxLength={MAX_REPORT_NOTE_LENGTH}
+							onChange={(e) => setNote(e.target.value)}
+						/>
+					</label>
+					<button type="submit">{texts.report.send}</button>
+				</form>
+			)}
+			{message && <p role="status">{message}</p>}
+		</div>
+	);
+}
+
+/** "Delete my data": two steps, so it cannot happen by accident. */
+function DeleteData({
+	db,
+	fetchFn,
+	onDeleted,
+}: {
+	db: QurallyDb;
+	fetchFn?: typeof fetch;
+	onDeleted: () => void;
+}) {
+	const [step, setStep] = useState<"idle" | "confirm" | "working">("idle");
+	const [message, setMessage] = useState<string | null>(null);
+
+	const confirm = async () => {
+		setStep("working");
+		const result = await deleteAllData(db, fetchFn);
+		if (result.status === "deleted") {
+			onDeleted();
+			return;
+		}
+		setMessage(
+			result.status === "offline" ? texts.account.offline : texts.account.error,
+		);
+		setStep("idle");
+	};
+
+	return (
+		<section className="account">
+			{step === "idle" ? (
+				<button
+					type="button"
+					className="secondary"
+					onClick={() => {
+						setMessage(null);
+						setStep("confirm");
+					}}
+				>
+					{texts.account.delete}
+				</button>
+			) : (
+				<div>
+					<p>{texts.account.confirmText}</p>
+					<button
+						type="button"
+						className="danger"
+						onClick={confirm}
+						disabled={step === "working"}
+					>
+						{texts.account.confirm}
+					</button>
+					<button
+						type="button"
+						className="secondary"
+						onClick={() => setStep("idle")}
+						disabled={step === "working"}
+					>
+						{texts.account.cancel}
+					</button>
+				</div>
+			)}
+			{message && <p role="alert">{message}</p>}
 		</section>
 	);
 }
@@ -686,5 +1033,3 @@ function QuestForm({
 		</form>
 	);
 }
-
-export type { Station };

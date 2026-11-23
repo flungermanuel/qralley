@@ -27,6 +27,10 @@ export class FakeServer {
 	playersStatus = 201;
 	/** HTTP status of POST /api/sync (200 = process events). */
 	syncStatus = 200;
+	/** HTTP status of DELETE /api/players/me. */
+	deleteStatus = 204;
+	/** DELETE /api/players/me fails with a network error. */
+	deleteFails = false;
 	/** Sync requests never get an answer. */
 	hangSync = false;
 	/** Number of upcoming sync requests that fail before reaching the server. */
@@ -84,6 +88,10 @@ export class FakeServer {
 			return jsonResponse(this.bundle, { etag: '"1"' });
 		if (url === "/api/players")
 			return jsonResponse({ created: true }, { status: this.playersStatus });
+		if (url === "/api/players/me" && method === "DELETE") {
+			if (this.deleteFails) throw new TypeError("Failed to fetch");
+			return new Response(null, { status: this.deleteStatus });
+		}
 		if (url !== "/api/sync") return new Response("not found", { status: 404 });
 
 		if (this.hangSync) return new Promise<Response>(() => {});
@@ -106,6 +114,12 @@ export class FakeServer {
 
 		const routeId = this.bundle.route.id;
 		const stations = Object.fromEntries(this.stations);
+		const playable = this.bundle.route.stations.filter(
+			(s) => !this.blocked.has(s.id),
+		);
+		const complete =
+			playable.length > 0 &&
+			playable.every((s) => this.stations.get(s.id)?.state === "completed");
 		return jsonResponse({
 			results,
 			progress: {
@@ -115,8 +129,8 @@ export class FakeServer {
 						[...this.stations].map(([stationId, s]) => ({ stationId, ...s })),
 					),
 					stations,
-					badges: [],
-					complete: false,
+					badges: complete ? [this.bundle.route.reward.badge.id] : [],
+					complete,
 				},
 			},
 			stationStates: {
@@ -161,6 +175,14 @@ export class FakeServer {
 			if (!current) return { status: "rejected", reason: "not_visited" };
 			this.stations.set(event.stationId, { ...current, state: "completed" });
 			return { status: "accepted" };
+		}
+		if (event.type === "fallback_checkin") {
+			if (this.stations.has(event.stationId))
+				return { status: "duplicate", reason: "already_visited" };
+			this.stations.set(event.stationId, {
+				state: "completed",
+				method: "fallback",
+			});
 		}
 		return { status: "accepted" };
 	}

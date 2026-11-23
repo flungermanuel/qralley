@@ -98,7 +98,7 @@ async function applyResponse(
 
 	await db.transaction(
 		"rw",
-		[db.outbox, db.progress, db.issues, db.routeBundles],
+		[db.outbox, db.progress, db.issues, db.routeBundles, db.badges],
 		async () => {
 			const answeredRoutes = new Set<string>();
 			for (const entry of batch) {
@@ -150,6 +150,11 @@ async function applyResponse(
 						method: s.method,
 						confirmed: true,
 					});
+				}
+				// Badges are awarded by the server only.
+				await db.badges.filter((b) => b.routeId === routeId).delete();
+				for (const badgeId of data.progress[routeId]?.badges ?? []) {
+					await db.badges.put({ routeId, badgeId });
 				}
 			}
 		},
