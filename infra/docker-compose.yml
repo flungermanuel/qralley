@@ -1,0 +1,21 @@
+# Local development database only. The credentials below are throwaway dev values
+# and the port is bound to localhost. Never reuse them anywhere else.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: qurally
+      POSTGRES_PASSWORD: qurally_dev
+      POSTGRES_DB: qurally
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - qurally-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qurally"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  qurally-db:

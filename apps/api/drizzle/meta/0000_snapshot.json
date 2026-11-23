@@ -1,0 +1,482 @@
+{
+	"id": "1025926a-c82d-4249-b0aa-2f2203553be3",
+	"prevId": "00000000-0000-0000-0000-000000000000",
+	"version": "7",
+	"dialect": "postgresql",
+	"tables": {
+		"public.badges_awarded": {
+			"name": "badges_awarded",
+			"schema": "",
+			"columns": {
+				"player_id": {
+					"name": "player_id",
+					"type": "uuid",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"route_id": {
+					"name": "route_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"badge_id": {
+					"name": "badge_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"awarded_at": {
+					"name": "awarded_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {
+				"badges_awarded_player_id_players_id_fk": {
+					"name": "badges_awarded_player_id_players_id_fk",
+					"tableFrom": "badges_awarded",
+					"tableTo": "players",
+					"columnsFrom": ["player_id"],
+					"columnsTo": ["id"],
+					"onDelete": "cascade",
+					"onUpdate": "no action"
+				}
+			},
+			"compositePrimaryKeys": {
+				"badges_awarded_player_id_route_id_badge_id_pk": {
+					"name": "badges_awarded_player_id_route_id_badge_id_pk",
+					"columns": ["player_id", "route_id", "badge_id"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.players": {
+			"name": "players",
+			"schema": "",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "uuid",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"secret_hash": {
+					"name": "secret_hash",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				},
+				"last_seen_at": {
+					"name": "last_seen_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.progress": {
+			"name": "progress",
+			"schema": "",
+			"columns": {
+				"player_id": {
+					"name": "player_id",
+					"type": "uuid",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"route_id": {
+					"name": "route_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"station_id": {
+					"name": "station_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"state": {
+					"name": "state",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"method": {
+					"name": "method",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"scan_xp": {
+					"name": "scan_xp",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"default": 0
+				},
+				"quest_xp": {
+					"name": "quest_xp",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"default": 0
+				},
+				"visited_at": {
+					"name": "visited_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				},
+				"completed_at": {
+					"name": "completed_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": false
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {
+				"progress_player_id_players_id_fk": {
+					"name": "progress_player_id_players_id_fk",
+					"tableFrom": "progress",
+					"tableTo": "players",
+					"columnsFrom": ["player_id"],
+					"columnsTo": ["id"],
+					"onDelete": "cascade",
+					"onUpdate": "no action"
+				}
+			},
+			"compositePrimaryKeys": {
+				"progress_player_id_route_id_station_id_pk": {
+					"name": "progress_player_id_route_id_station_id_pk",
+					"columns": ["player_id", "route_id", "station_id"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {
+				"progress_state_check": {
+					"name": "progress_state_check",
+					"value": "\"progress\".\"state\" in ('visited', 'completed')"
+				},
+				"progress_method_check": {
+					"name": "progress_method_check",
+					"value": "\"progress\".\"method\" in ('scan', 'fallback')"
+				},
+				"progress_xp_check": {
+					"name": "progress_xp_check",
+					"value": "\"progress\".\"scan_xp\" >= 0 and \"progress\".\"quest_xp\" >= 0"
+				}
+			},
+			"isRLSEnabled": false
+		},
+		"public.reports": {
+			"name": "reports",
+			"schema": "",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "uuid",
+					"primaryKey": true,
+					"notNull": true,
+					"default": "gen_random_uuid()"
+				},
+				"player_id": {
+					"name": "player_id",
+					"type": "uuid",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"route_id": {
+					"name": "route_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"station_id": {
+					"name": "station_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"kind": {
+					"name": "kind",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"note": {
+					"name": "note",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"status": {
+					"name": "status",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "'open'"
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {
+				"reports_player_id_players_id_fk": {
+					"name": "reports_player_id_players_id_fk",
+					"tableFrom": "reports",
+					"tableTo": "players",
+					"columnsFrom": ["player_id"],
+					"columnsTo": ["id"],
+					"onDelete": "set null",
+					"onUpdate": "no action"
+				}
+			},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {
+				"reports_kind_check": {
+					"name": "reports_kind_check",
+					"value": "\"reports\".\"kind\" in ('code_damaged', 'code_missing', 'unsafe', 'other')"
+				},
+				"reports_status_check": {
+					"name": "reports_status_check",
+					"value": "\"reports\".\"status\" in ('open', 'resolved')"
+				},
+				"reports_note_length_check": {
+					"name": "reports_note_length_check",
+					"value": "char_length(\"reports\".\"note\") <= 200"
+				}
+			},
+			"isRLSEnabled": false
+		},
+		"public.route_versions": {
+			"name": "route_versions",
+			"schema": "",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "serial",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"route_id": {
+					"name": "route_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"version": {
+					"name": "version",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"content": {
+					"name": "content",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"content_hash": {
+					"name": "content_hash",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"published_at": {
+					"name": "published_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {
+				"route_versions_route_id_version_unique": {
+					"name": "route_versions_route_id_version_unique",
+					"nullsNotDistinct": false,
+					"columns": ["route_id", "version"]
+				},
+				"route_versions_route_id_content_hash_unique": {
+					"name": "route_versions_route_id_content_hash_unique",
+					"nullsNotDistinct": false,
+					"columns": ["route_id", "content_hash"]
+				}
+			},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.station_state": {
+			"name": "station_state",
+			"schema": "",
+			"columns": {
+				"route_id": {
+					"name": "route_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"station_id": {
+					"name": "station_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"status": {
+					"name": "status",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "'ok'"
+				},
+				"status_changed_at": {
+					"name": "status_changed_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				},
+				"status_reason": {
+					"name": "status_reason",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"station_state_route_id_station_id_pk": {
+					"name": "station_state_route_id_station_id_pk",
+					"columns": ["route_id", "station_id"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {
+				"station_state_status_check": {
+					"name": "station_state_status_check",
+					"value": "\"station_state\".\"status\" in ('ok', 'reported', 'blocked')"
+				}
+			},
+			"isRLSEnabled": false
+		},
+		"public.sync_events": {
+			"name": "sync_events",
+			"schema": "",
+			"columns": {
+				"player_id": {
+					"name": "player_id",
+					"type": "uuid",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"client_event_id": {
+					"name": "client_event_id",
+					"type": "uuid",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"type": {
+					"name": "type",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"result": {
+					"name": "result",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"reason": {
+					"name": "reason",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"received_at": {
+					"name": "received_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {
+				"sync_events_player_id_players_id_fk": {
+					"name": "sync_events_player_id_players_id_fk",
+					"tableFrom": "sync_events",
+					"tableTo": "players",
+					"columnsFrom": ["player_id"],
+					"columnsTo": ["id"],
+					"onDelete": "cascade",
+					"onUpdate": "no action"
+				}
+			},
+			"compositePrimaryKeys": {
+				"sync_events_player_id_client_event_id_pk": {
+					"name": "sync_events_player_id_client_event_id_pk",
+					"columns": ["player_id", "client_event_id"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {
+				"sync_events_result_check": {
+					"name": "sync_events_result_check",
+					"value": "\"sync_events\".\"result\" in ('accepted', 'duplicate', 'rejected')"
+				}
+			},
+			"isRLSEnabled": false
+		}
+	},
+	"enums": {},
+	"schemas": {},
+	"sequences": {},
+	"roles": {},
+	"policies": {},
+	"views": {},
+	"_meta": {
+		"columns": {},
+		"schemas": {},
+		"tables": {}
+	}
+}

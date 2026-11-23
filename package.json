@@ -8,7 +8,11 @@
 		"format": "biome format --write .",
 		"typecheck": "pnpm -r --if-present typecheck",
 		"route:validate": "tsx scripts/route-validate.ts",
-		"qr:generate": "tsx --env-file-if-exists=.env scripts/qr-generate.ts"
+		"qr:generate": "tsx --env-file-if-exists=.env scripts/qr-generate.ts",
+		"db:up": "docker compose -f infra/docker-compose.yml up -d --wait db",
+		"db:migrate": "pnpm --filter @qurally/api db:migrate",
+		"route:publish": "tsx --env-file-if-exists=.env scripts/route-publish.ts",
+		"dev": "pnpm --filter @qurally/api dev"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.6.8",
