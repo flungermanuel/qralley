@@ -70,12 +70,16 @@ export function buildApp({
 			return reply.code(400).send({ error: "invalid_request" });
 		// Never log the message: database errors carry the SQL and its bound parameters
 		// (player ids, secret hashes, report notes). Name and SQLSTATE are enough to find the cause.
-		const code = (error as { code?: unknown }).code;
+		// Drizzle wraps driver errors: the PostgreSQL SQLSTATE sits in `cause.code`.
+		const cause = (error as { cause?: { code?: unknown } }).cause;
+		const code = [(error as { code?: unknown }).code, cause?.code].find(
+			(c): c is string => typeof c === "string" && /^[0-9A-Z]{5}$/.test(c),
+		);
 		app.log.error(
 			{
 				err: {
 					name: error.name,
-					...(typeof code === "string" ? { code } : {}),
+					...(code ? { code } : {}),
 				},
 			},
 			"unhandled error",

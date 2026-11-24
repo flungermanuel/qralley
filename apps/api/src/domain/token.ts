@@ -92,6 +92,12 @@ export function parseSigningKeys(
 			return fail(`key version "${version}" must be a positive integer`);
 		if (typeof secret !== "string")
 			return fail(`secret for key version ${version} must be a string`);
+		// The example file ships a placeholder; it must never be mistaken for a real key.
+		if (/replace|changeme|your[_-]?key|example/i.test(secret)) {
+			return fail(
+				`secret for key version ${version} is still a placeholder; generate a random one (see the example env file)`,
+			);
+		}
 		const bytes = base64urlDecode(secret);
 		if (!bytes)
 			return fail(`secret for key version ${version} is not valid base64url`);

@@ -101,6 +101,10 @@ export const texts = {
 		confirmText:
 			"Dein Fortschritt und dein Abzeichen werden auf diesem Gerät und auf dem Server gelöscht. Noch nicht gesendete Einträge gehen verloren. Das kann nicht rückgängig gemacht werden.",
 		confirm: "Endgültig löschen",
+		pending:
+			"Das Löschen konnte nicht bestätigt werden. Die Synchronisierung ist pausiert, bis du es erneut versuchst oder abbrichst.",
+		retry: "Löschen erneut versuchen",
+		cancelPending: "Löschen abbrechen",
 		cancel: "Abbrechen",
 		offline:
 			"Zum Löschen brauchst du eine Internetverbindung. Deine Daten bleiben vorerst erhalten.",

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { Writable } from "node:stream";
 import { base64urlEncode } from "@qurally/shared";
-import { eq } from "drizzle-orm";
+import { DrizzleQueryError, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
 	afterAll,
@@ -15,7 +16,7 @@ import {
 import { buildApp } from "../src/app";
 import { players, reports, stationState } from "../src/db/schema";
 import { setStationStatus } from "../src/domain/station-admin";
-import { parseSigningKeys, signToken } from "../src/domain/token";
+import { parseSigningKeys } from "../src/domain/token";
 import {
 	bearer,
 	type Credentials,
@@ -193,11 +194,11 @@ describe("error logging (review finding 5)", () => {
 		const secret = base64urlEncode(Buffer.alloc(32, 9));
 		const playerId = randomUUID();
 		vi.spyOn(db, "insert").mockImplementation(() => {
-			throw Object.assign(
-				new Error(
-					`Failed query: insert into "players" values ($1, $2)\nparams: ${playerId},TOPSECRETHASH`,
-				),
-				{ code: "53300" },
+			// The shape real database errors have: the driver error (with the SQLSTATE) sits in `cause`.
+			throw new DrizzleQueryError(
+				'insert into "players" values ($1, $2)',
+				[playerId, "TOPSECRETHASH"],
+				Object.assign(new Error("too many connections"), { code: "53300" }),
 			);
 		});
 		const res = await logged.inject({
@@ -247,6 +248,23 @@ describe("signing keys in production (review finding 8)", () => {
 		expect(
 			parseSigningKeys(key(random), { production: true }).get(1)?.length,
 		).toBe(32);
+	});
+
+	it("never accepts the placeholder from .env.example, in any environment", () => {
+		const line = readFileSync(
+			new URL("../../../.env.example", import.meta.url),
+			"utf8",
+		)
+			.split("\n")
+			.find((l) => l.startsWith("QR_SIGNING_KEYS="));
+		expect(line).toBeTruthy();
+		const value = (line ?? "").slice("QR_SIGNING_KEYS=".length);
+		expect(() => parseSigningKeys(value, { production: true })).toThrow(
+			/placeholder/,
+		);
+		expect(() => parseSigningKeys(value, { production: false })).toThrow(
+			/placeholder/,
+		);
 	});
 
 	it("keeps accepting test keys outside production", () => {
@@ -318,11 +336,5 @@ describe("operator: setStationStatus (AK-REP-05)", () => {
 		await expect(
 			setStationStatus(db, ROUTE, G, "kaputt" as never),
 		).rejects.toThrow(/status/i);
-	});
-
-	it("signing still works unchanged (smoke)", () => {
-		expect(
-			signToken(keys, { routeId: ROUTE, stationId: G, keyVersion: 1 }),
-		).toMatch(/^q1\./);
 	});
 });

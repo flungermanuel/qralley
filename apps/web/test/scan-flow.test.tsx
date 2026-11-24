@@ -173,7 +173,7 @@ describe("quest", () => {
 		fireEvent.click(screen.getByRole("button", { name: texts.quest.check }));
 
 		expect(await screen.findByText(texts.quest.correct(40))).toBeTruthy();
-		expect(screen.getByText(texts.xp.summary(50, true))).toBeTruthy();
+		expect(await screen.findByText(texts.xp.summary(50, true))).toBeTruthy();
 		expect((await progress(db))[0]).toMatchObject({
 			state: "completed",
 			confirmed: false,
@@ -192,7 +192,7 @@ describe("quest", () => {
 		fireEvent.click(screen.getByRole("button", { name: texts.quest.check }));
 
 		expect(await screen.findByText(texts.quest.wrong)).toBeTruthy();
-		expect(screen.getByText(texts.xp.summary(10, true))).toBeTruthy();
+		expect(await screen.findByText(texts.xp.summary(10, true))).toBeTruthy();
 		expect((await progress(db))[0]).toMatchObject({ state: "visited" });
 		expect(
 			screen.getByRole("button", { name: texts.quest.check }),

@@ -53,7 +53,7 @@ describe("sync triggers", () => {
 
 		expect(await screen.findByText(texts.sync.failed)).toBeTruthy();
 		expect(screen.getByText(texts.sync.pending(1))).toBeTruthy();
-		expect(screen.getByText(texts.xp.summary(10, true))).toBeTruthy();
+		expect(await screen.findByText(texts.xp.summary(10, true))).toBeTruthy();
 
 		window.dispatchEvent(new Event("online"));
 		expect(await screen.findByText(texts.xp.summary(10, false))).toBeTruthy();
@@ -112,7 +112,7 @@ describe("sync triggers", () => {
 		fireEvent.click(screen.getByLabelText("Golden"));
 		fireEvent.click(screen.getByRole("button", { name: texts.quest.check }));
 		expect(await screen.findByText(texts.quest.correct(40))).toBeTruthy();
-		expect(screen.getByText(texts.xp.summary(50, true))).toBeTruthy();
+		expect(await screen.findByText(texts.xp.summary(50, true))).toBeTruthy();
 	});
 });
 

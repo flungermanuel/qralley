@@ -8,11 +8,13 @@ export type DeleteResult = { status: "deleted" | "offline" | "error" };
 
 /**
  * "Delete my data": removes the server account (progress, badges, events) and then
- * every local table. Without a connection nothing is deleted locally, so the player
- * keeps the credentials needed to repeat it. Reports stay on the server, unlinked.
+ * every local table. Without a confirmed answer nothing is deleted locally, so the
+ * player keeps the credentials needed to repeat it. Reports stay on the server, unlinked.
  *
  * A running sync is awaited first and no new one may start meanwhile; otherwise it could
  * re-register the deleted player or write old server progress into the fresh profile.
+ * The request itself may reach the server even if its answer is lost, so `deletionRequested`
+ * stays set (and syncing stays paused) until a retry succeeds or the player cancels.
  */
 export async function deleteAllData(
 	db: QurallyDb,
@@ -25,6 +27,7 @@ export async function deleteAllData(
 		const profile = await db.profile.get("me");
 
 		if (profile?.registered) {
+			await db.profile.update("me", { deletionRequested: true });
 			let res: Response;
 			try {
 				res = await fetchWithTimeout(
@@ -70,4 +73,9 @@ export async function deleteAllData(
 	} finally {
 		endDeletion(db);
 	}
+}
+
+/** The player gives up a deletion that could not be confirmed; syncing resumes. */
+export async function cancelDeletion(db: QurallyDb): Promise<void> {
+	await db.profile.update("me", { deletionRequested: false });
 }

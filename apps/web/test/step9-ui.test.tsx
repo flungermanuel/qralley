@@ -355,6 +355,16 @@ describe("delete my data", () => {
 		expect(screen.queryByText(texts.safety.title)).toBeNull();
 		expect(await db.progress.count()).toBe(1);
 		expect(await db.profile.count()).toBe(1);
+
+		// The request may have reached the server, so syncing is paused until retry or cancel.
+		expect(await screen.findByText(texts.account.pending)).toBeTruthy();
+		fireEvent.click(
+			screen.getByRole("button", { name: texts.account.cancelPending }),
+		);
+		await waitFor(() =>
+			expect(screen.queryByText(texts.account.pending)).toBeNull(),
+		);
+		expect((await db.profile.get("me"))?.deletionRequested).toBe(false);
 	});
 });
 

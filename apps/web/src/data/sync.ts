@@ -185,10 +185,18 @@ async function runOnce(
 	fetchFn: typeof fetch,
 	timeoutMs: number,
 ): Promise<SyncReport> {
-	const nothing: SyncReport = { status: "nothing", pending: 0, rejected: 0 };
-	if (isDeleting(db)) return nothing;
+	// "Nothing was done", but still report how many events wait, so callers can retry later.
+	const nothing = async (): Promise<SyncReport> => ({
+		status: "nothing",
+		pending: await db.outbox.count(),
+		rejected: 0,
+	});
+	if (isDeleting(db)) return nothing();
 	const profile = await getOrCreateProfile(db);
-	if (!profile.registered && (await db.outbox.count()) === 0) return nothing;
+	// A deletion that was not confirmed may already have removed the player on the server:
+	// syncing now would register it again. Wait for a retry or a cancel.
+	if (profile.deletionRequested) return nothing();
+	if (!profile.registered && (await db.outbox.count()) === 0) return nothing();
 
 	let rejected = 0;
 	let batch: OutboxEntry[] = [];
@@ -203,7 +211,7 @@ async function runOnce(
 		let reregistered = false;
 
 		for (;;) {
-			if (isDeleting(db)) return nothing;
+			if (isDeleting(db)) return nothing();
 			batch = await db.outbox.orderBy("seq").limit(MAX_SYNC_BATCH).toArray();
 			const current = await getOrCreateProfile(db);
 			const res = await request(
@@ -220,7 +228,7 @@ async function runOnce(
 				timeoutMs,
 			);
 			// The player may have started deleting their data while the request was in flight.
-			if (isDeleting(db)) return nothing;
+			if (isDeleting(db)) return nothing();
 
 			if (res.status === 401) {
 				// The server does not know us (e.g. its database was reset): register again, once.
@@ -241,7 +249,7 @@ async function runOnce(
 			});
 			const parsed = syncResponseSchema.safeParse(body);
 			if (!parsed.success) throw new ServerError("unexpected sync response");
-			if (isDeleting(db)) return nothing;
+			if (isDeleting(db)) return nothing();
 
 			const before = await db.outbox.count();
 			rejected += await applyResponse(db, batch, parsed.data);
@@ -274,8 +282,11 @@ export function syncOutbox(
 	options: HttpOptions = {},
 ): Promise<SyncReport> {
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-	if (isDeleting(db))
-		return Promise.resolve({ status: "nothing", pending: 0, rejected: 0 });
+	if (isDeleting(db)) {
+		return db.outbox
+			.count()
+			.then((pending) => ({ status: "nothing", pending, rejected: 0 }));
+	}
 	const current = running.get(db);
 	if (current) {
 		current.rerun = true;

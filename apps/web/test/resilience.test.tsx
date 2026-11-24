@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { App } from "../src/App";
-import { deleteAllData } from "../src/data/account";
+import { cancelDeletion, deleteAllData } from "../src/data/account";
+import { beginDeletion, endDeletion, isDeleting } from "../src/data/lifecycle";
 import { getOrCreateProfile } from "../src/data/profile";
 import { answerQuest } from "../src/data/quest";
 import { loadRoute } from "../src/data/route";
@@ -93,7 +94,7 @@ describe("requests time out (review finding 3)", () => {
 				json: () => new Promise(() => {}),
 			}) as unknown as Response;
 		const result = await syncOutbox(db, stuckBody, SHORT);
-		expect(["offline", "error"]).toContain(result.status);
+		expect(result.status).toBe("offline");
 		expect(await db.outbox.count()).toBe(1);
 	});
 
@@ -197,14 +198,18 @@ describe("delete my data vs. running sync (review finding 4)", () => {
 		server.calls.length = 0;
 
 		let release: () => void = () => {};
+		let parked = false;
 		const slowDelete: typeof fetch = async (input, init) => {
-			if (String(input) === "/api/players/me")
-				await new Promise<void>((r) => (release = r));
+			if (String(input) === "/api/players/me") {
+				await new Promise<void>((resolve) => {
+					release = resolve;
+					parked = true;
+				});
+			}
 			return server.fetch(input, init);
 		};
 		const deleting = deleteAllData(db, slowDelete);
-		await waitFor(() => expect(server.calls.length).toBe(0)); // DELETE is parked in slowDelete
-		await sleep(20);
+		await waitFor(() => expect(parked).toBe(true)); // the DELETE request is on its way
 
 		const during = await syncOutbox(db, server.fetch);
 		expect(during).toMatchObject({ status: "nothing" });
@@ -216,12 +221,55 @@ describe("delete my data vs. running sync (review finding 4)", () => {
 		expect(server.playerCalls).toHaveLength(0);
 	});
 
-	it("after a failed deletion syncing works again", async () => {
+	it("a deletion that was not confirmed keeps syncing paused: the request may have reached the server", async () => {
+		const server = new FakeServer();
+		const db = await registeredWithPending(server);
+		server.deleteFails = true; // the answer is lost; the server may have deleted the player
+		expect((await deleteAllData(db, server.fetch)).status).toBe("offline");
+		expect((await db.profile.get("me"))?.deletionRequested).toBe(true);
+
+		server.calls.length = 0;
+		server.deleteFails = false;
+		const paused = await syncOutbox(db, server.fetch);
+		expect(paused).toMatchObject({ status: "nothing", pending: 2 }); // the real number of waiting events
+		expect(server.calls).toHaveLength(0); // no sync, and above all no re-registration
+	});
+
+	it("retrying a pending deletion finishes it, also when the player is already gone (401)", async () => {
 		const server = new FakeServer();
 		const db = await registeredWithPending(server);
 		server.deleteFails = true;
-		expect((await deleteAllData(db, server.fetch)).status).toBe("offline");
+		await deleteAllData(db, server.fetch);
+
+		server.deleteFails = false;
+		server.deleteStatus = 401;
+		expect(await deleteAllData(db, server.fetch)).toEqual({
+			status: "deleted",
+		});
+		expect(await db.profile.count()).toBe(0);
+		expect(await db.progress.count()).toBe(0);
+	});
+
+	it("the player can cancel a pending deletion and syncing resumes", async () => {
+		const server = new FakeServer();
+		const db = await registeredWithPending(server);
+		server.deleteFails = true;
+		await deleteAllData(db, server.fetch);
+
+		await cancelDeletion(db);
+
+		expect((await db.profile.get("me"))?.deletionRequested).toBe(false);
 		server.deleteFails = false;
 		expect((await syncOutbox(db, server.fetch)).status).toBe("synced");
+	});
+
+	it("overlapping deletions keep the flag until the last one has finished", () => {
+		const db = testDb();
+		beginDeletion(db);
+		beginDeletion(db);
+		endDeletion(db);
+		expect(isDeleting(db)).toBe(true);
+		endDeletion(db);
+		expect(isDeleting(db)).toBe(false);
 	});
 });

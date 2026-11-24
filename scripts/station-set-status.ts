@@ -6,7 +6,7 @@ const databaseUrl = process.env.DATABASE_URL;
 
 if (!routeId || !stationId || !status || !databaseUrl) {
 	console.error(
-		"Usage: pnpm station:set-status <routeId> <stationId> <ok|reported|blocked> [reason]\n(DATABASE_URL must be set, see .env.example)",
+		"Usage: pnpm station:set-status <routeId> <stationId> <ok|reported|blocked> [reason]\nThe reason is PUBLIC: every player sees it in the route data. No names or personal data.\n(DATABASE_URL must be set, see .env.example)",
 	);
 	process.exit(1);
 }

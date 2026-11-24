@@ -8,6 +8,8 @@ export interface Profile {
 	/** Device secret. Only its hash ever reaches the server. */
 	secret: string;
 	registered: boolean;
+	/** Set while a deletion request may have reached the server but was not confirmed. Syncing is paused. */
+	deletionRequested?: boolean;
 	safetyAcknowledgedAt: number | null;
 	createdAt: number;
 }

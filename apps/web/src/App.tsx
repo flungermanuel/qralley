@@ -14,7 +14,7 @@ import {
 } from "react";
 import { createBrowserGeolocation } from "./adapters/browser-geolocation";
 import { createZxingScanner } from "./adapters/zxing-scanner";
-import { deleteAllData } from "./data/account";
+import { cancelDeletion, deleteAllData } from "./data/account";
 import { type BadgeStatus, badgeStatus } from "./data/badge";
 import type {
 	LocalBadge,
@@ -207,6 +207,7 @@ const queryProgress = (db: QurallyDb) =>
 const queryPending = (db: QurallyDb) => db.outbox.count();
 const queryIssues = (db: QurallyDb) => db.issues.orderBy("id").toArray();
 const queryBundle = (db: QurallyDb) => db.routeBundles.get(ROUTE_ID);
+const queryProfile = (db: QurallyDb) => db.profile.get("me");
 const queryBadges = (db: QurallyDb) =>
 	db.badges.filter((b) => b.routeId === ROUTE_ID).toArray();
 const browserGeolocation = createBrowserGeolocation();
@@ -305,6 +306,7 @@ function RouteView({
 	const pending = useLive(db, queryPending, 0);
 	const issues = useLive(db, queryIssues, [] as SyncIssue[]);
 	const storedBundle = useLive(db, queryBundle, undefined);
+	const storedProfile = useLive(db, queryProfile, undefined);
 	const badges = useLive(db, queryBadges, [] as LocalBadge[]);
 	const sync = useSync(db, fetchFn, pending);
 
@@ -413,7 +415,12 @@ function RouteView({
 						}}
 					/>
 					<p className="tip">{texts.route.installTip}</p>
-					<DeleteData db={db} fetchFn={fetchFn} onDeleted={onDeleted} />
+					<DeleteData
+						db={db}
+						fetchFn={fetchFn}
+						onDeleted={onDeleted}
+						pendingDeletion={storedProfile?.deletionRequested === true}
+					/>
 				</>
 			)}
 		</>
@@ -923,10 +930,12 @@ function DeleteData({
 	db,
 	fetchFn,
 	onDeleted,
+	pendingDeletion,
 }: {
 	db: QurallyDb;
 	fetchFn?: typeof fetch;
 	onDeleted: () => void;
+	pendingDeletion: boolean;
 }) {
 	const [step, setStep] = useState<"idle" | "confirm" | "working">("idle");
 	const [message, setMessage] = useState<string | null>(null);
@@ -946,6 +955,21 @@ function DeleteData({
 
 	return (
 		<section className="account">
+			{pendingDeletion && step === "idle" && (
+				<div>
+					<p role="alert">{texts.account.pending}</p>
+					<button type="button" className="danger" onClick={confirm}>
+						{texts.account.retry}
+					</button>
+					<button
+						type="button"
+						className="secondary"
+						onClick={() => void cancelDeletion(db)}
+					>
+						{texts.account.cancelPending}
+					</button>
+				</div>
+			)}
 			{step === "idle" ? (
 				<button
 					type="button"
