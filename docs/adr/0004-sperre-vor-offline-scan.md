@@ -3,6 +3,7 @@
 Status: Angenommen
 Datum: 2026-11-23
 Bezug: SPEC §5.3, AK-SCAN-06
+Geändert durch: 0007 (Sperren nur noch durch den Operator; die Entscheidung unten gilt unverändert)
 
 ## Kontext
 

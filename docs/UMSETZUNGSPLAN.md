@@ -15,6 +15,8 @@ Jeder Schritt = ein Commit, bei grünen Tests/Lint/Typecheck. Reihenfolge so gew
 | 9 | **Ersatzweg + Meldung + Abzeichen + Datenlöschung (UI)** | Playwright mit `setGeolocation`: im Radius, außerhalb, ungenau, Berechtigung verweigert; Meldung offline; unsafe-Pfad ≤ 2 Taps; Abzeichen-Screen offline vorläufig → bestätigt; „Daten löschen" | Geolocation-Port, Meldeformular, Abschluss-Screen, Löschen | AK-FALL-01…09, AK-REP-01/04/06/07, AK-BADGE-04, AK-SAFE-02/03, AK-PROF-03, AK-PRIV-02 | Berechtigungs-Fehlerpfade, XSS-Sicherheit, Keine Serien/Timer in UI (≈ 1–2 Tage) |
 | 10 | **Betrieb + Feldtest-Vorbereitung**: Dockerfile, `docker-compose` (app, db, caddy), CI (Postgres + Playwright), `.env.example`, Backup-Skript, Tunnel-Anleitung, `docs/FELDTEST.md` (Checkliste), CLI `station:set-status`, ADR 0001–0006 | Smoke-Test gegen laufenden Compose-Stack (Health, Route laden, Sync); CI läuft grün; Skript prüft fehlende Secrets → Abbruch | Infra-Dateien, Doku, CLI | AK-CLI-01…03, AK-REP-05 | Keine Secrets im Image/Repo, HTTPS/HSTS/CSP, Logging ohne IP, Backup-Wiederherstellung einmal ausprobiert (≈ 1 Tag) |
 
+> **Hinweis (2026-11-24):** Schritte 1–9 sind erledigt. Schritt 10 und alles Weitere bis zum Feldtest stehen jetzt in `docs/V1-FUNDAMENT.md` (Phasen G und H). Die Zeile „2× `unsafe` → gesperrt" in Schritt 5 gilt nicht mehr (ADR 0007).
+
 ## Danach (kein Teil der Mini-Version)
 Selbsttest mit Tunnel (Stufe 2) → Befunde → Korrekturschritte → Feldtest (Stufe 3) → Entscheidungen über Events/Creator-Datenformat.
 

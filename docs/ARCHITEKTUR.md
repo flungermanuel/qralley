@@ -35,6 +35,8 @@ Die Apps importieren sich **nie** gegenseitig; gemeinsam genutzter Code gehört 
 5. **Datensparsamkeit.** Positionen nur im Outbox-Ereignis, nie persistiert oder geloggt. Keine IPs, Bodies, Tokens in Logs.
 6. **Keine neue Abhängigkeit ohne ADR** (docs/adr/).
 7. **Dateigröße als Frühwarnung.** Ab 500 Zeilen schlägt `check:layers` an. Bekannte Altlasten sind eingefroren und dürfen nur schrumpfen.
+8. **Erweitern durch neue Module, nicht durch Umbau.** Quest-Typen kommen als Modul in eine statisch deklarierte, zur Laufzeit geschlossene Registry in `packages/shared` (ADR 0008). Der Validator bleibt das einzige Tor für Routeninhalte; neue Streckentypen nur mit eigenen Sicherheitsregeln und ADR.
+9. **Domain meldet, HTTP loggt.** Die Domain gibt Ereignisse wie den Operator-Alarm als Rückgabewert zurück; geloggt wird in `routes`/`app.ts` mit expliziter Feldliste (ADR 0007).
 
 ## 3. Bekannte Schulden (ehrlich)
 
@@ -47,6 +49,7 @@ Die Apps importieren sich **nie** gegenseitig; gemeinsam genutzter Code gehört 
 | Keine CSP/Security-Header, kein Container | Auslieferung                                                 | Schritt 10 (Caddy/Docker)                                                                                                                            | Angriffsfläche im Feldtest                     |
 
 Diese Schulden werden als eigene kleine Schritte abgebaut (Verhalten gleich, Tests grün), nicht nebenbei.
+Reihenfolge und Schritte: `docs/V1-FUNDAMENT.md` (Phasen D, E, F).
 
 ## 4. Arbeitsablauf mit Agenten
 
@@ -54,6 +57,7 @@ Details: `.claude/skills/new-feature/SKILL.md`, Hooks: `.claude/settings.json`.
 
 | Agent               | Modell | Aufgabe                                                        | Werkzeuge                    |
 | ------------------- | ------ | -------------------------------------------------------------- | ---------------------------- |
+| `planner`           | opus   | Gesprächspartner: Features und Vorgehen durchdenken, Optionen mit Empfehlung, Schritte (schreibt nichts) | nur Lesen |
 | `architect`         | opus   | Planung, ADRs, SPEC, Schichtenregeln                           | Lesen, nur Doku schreiben    |
 | `test-writer`       | sonnet | rote Tests aus Abnahmekriterien                                | Lesen, Tests schreiben, Bash |
 | `implementer`       | sonnet | minimaler Code bis grün, richtige Schicht                      | Lesen, Schreiben, Bash       |
