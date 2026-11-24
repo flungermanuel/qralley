@@ -351,7 +351,8 @@ function RouteView({
 		});
 	}, [bundle, pendingScan, db, handleOutcome, onScanConsumed]);
 
-	if (!result) return <p>{texts.loading}</p>;
+	// A cached route is shown at once; the network request only refreshes it (it may never answer).
+	if (!bundle && !result) return <p>{texts.loading}</p>;
 	if (!bundle) return <p>{texts.route.notLoaded}</p>;
 
 	const summary = summarizeProgress(bundle, rows);
@@ -362,7 +363,7 @@ function RouteView({
 
 	return (
 		<>
-			{result.status === "cached" && (
+			{result?.status === "cached" && (
 				<p className="offline">{texts.route.offlineCached}</p>
 			)}
 			<p className="xp">{texts.xp.summary(summary.xp, summary.provisional)}</p>

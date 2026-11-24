@@ -15,6 +15,8 @@ export type VerifyResult =
 	| { ok: false; reason: "malformed" | "unknown_key" | "invalid_token" };
 
 const MIN_KEY_BYTES = 32;
+/** 32 random bytes contain about 28 distinct values; constant or patterned test keys contain far fewer. */
+const MIN_DISTINCT_BYTES = 16;
 // Domain separation: this key/MAC pair is only valid for QR tokens, format version 1.
 const DOMAIN = "qurally-qr-v1\0";
 
@@ -59,7 +61,12 @@ export function verifyToken(keys: SigningKeys, token: string): VerifyResult {
  * Parses QR_SIGNING_KEYS: JSON object, key version -> base64url secret (>= 32 bytes).
  * Error messages never contain secret material.
  */
-export function parseSigningKeys(raw: string | undefined): SigningKeys {
+export function parseSigningKeys(
+	raw: string | undefined,
+	options: { production?: boolean } = {},
+): SigningKeys {
+	const production =
+		options.production ?? process.env.NODE_ENV === "production";
 	const fail = (message: string): never => {
 		throw new Error(`QR_SIGNING_KEYS: ${message}`);
 	};
@@ -91,6 +98,12 @@ export function parseSigningKeys(raw: string | undefined): SigningKeys {
 		if (bytes.length < MIN_KEY_BYTES) {
 			return fail(
 				`secret for key version ${version} must be at least ${MIN_KEY_BYTES} bytes`,
+			);
+		}
+		// Test and e2e keys are constant bytes; refuse anything that is not clearly random in production.
+		if (production && new Set(bytes).size < MIN_DISTINCT_BYTES) {
+			return fail(
+				`secret for key version ${version} does not look random (use 32 random bytes in production)`,
 			);
 		}
 		keys.set(Number(version), Buffer.from(bytes));

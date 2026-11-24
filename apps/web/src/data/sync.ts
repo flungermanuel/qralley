@@ -6,6 +6,14 @@ import {
 	syncResponseSchema,
 } from "@qurally/shared";
 import type { OutboxEntry, QurallyDb } from "./db";
+import {
+	DEFAULT_TIMEOUT_MS,
+	fetchWithTimeout,
+	type HttpOptions,
+	raceTimeout,
+	TimeoutError,
+} from "./http";
+import { isDeleting } from "./lifecycle";
 import { getOrCreateProfile } from "./profile";
 
 /** synced: server answered; nothing: no account and no events; offline: no connection; error: server problem. */
@@ -37,14 +45,15 @@ function stationOf(event: SyncEvent): string | null {
 	return event.stationId;
 }
 
-/** Sends a request; a thrown fetch error means we are offline. */
+/** Sends a request; a thrown fetch error or a missing answer (timeout) means we are offline. */
 async function request(
 	fetchFn: typeof fetch,
 	url: string,
 	init: RequestInit,
+	timeoutMs: number,
 ): Promise<Response> {
 	try {
-		return await fetchFn(url, init);
+		return await fetchWithTimeout(fetchFn, url, init, timeoutMs);
 	} catch (err) {
 		throw new OfflineError(
 			err instanceof Error ? err.message : "network error",
@@ -52,16 +61,25 @@ async function request(
 	}
 }
 
-async function register(db: QurallyDb, fetchFn: typeof fetch): Promise<void> {
+async function register(
+	db: QurallyDb,
+	fetchFn: typeof fetch,
+	timeoutMs: number,
+): Promise<void> {
 	const profile = await getOrCreateProfile(db);
-	const res = await request(fetchFn, "/api/players", {
-		method: "POST",
-		headers: JSON_HEADERS,
-		body: JSON.stringify({
-			playerId: profile.playerId,
-			secret: profile.secret,
-		}),
-	});
+	const res = await request(
+		fetchFn,
+		"/api/players",
+		{
+			method: "POST",
+			headers: JSON_HEADERS,
+			body: JSON.stringify({
+				playerId: profile.playerId,
+				secret: profile.secret,
+			}),
+		},
+		timeoutMs,
+	);
 	if (!res.ok) throw new ServerError(`registration failed (${res.status})`);
 	await db.profile.update("me", { registered: true });
 }
@@ -165,11 +183,12 @@ async function applyResponse(
 async function runOnce(
 	db: QurallyDb,
 	fetchFn: typeof fetch,
+	timeoutMs: number,
 ): Promise<SyncReport> {
+	const nothing: SyncReport = { status: "nothing", pending: 0, rejected: 0 };
+	if (isDeleting(db)) return nothing;
 	const profile = await getOrCreateProfile(db);
-	if (!profile.registered && (await db.outbox.count()) === 0) {
-		return { status: "nothing", pending: 0, rejected: 0 };
-	}
+	if (!profile.registered && (await db.outbox.count()) === 0) return nothing;
 
 	let rejected = 0;
 	let batch: OutboxEntry[] = [];
@@ -180,35 +199,49 @@ async function runOnce(
 	});
 
 	try {
-		if (!profile.registered) await register(db, fetchFn);
+		if (!profile.registered) await register(db, fetchFn, timeoutMs);
 		let reregistered = false;
 
 		for (;;) {
+			if (isDeleting(db)) return nothing;
 			batch = await db.outbox.orderBy("seq").limit(MAX_SYNC_BATCH).toArray();
 			const current = await getOrCreateProfile(db);
-			const res = await request(fetchFn, "/api/sync", {
-				method: "POST",
-				headers: {
-					...JSON_HEADERS,
-					authorization: `Bearer ${current.playerId}.${current.secret}`,
+			const res = await request(
+				fetchFn,
+				"/api/sync",
+				{
+					method: "POST",
+					headers: {
+						...JSON_HEADERS,
+						authorization: `Bearer ${current.playerId}.${current.secret}`,
+					},
+					body: JSON.stringify({ events: batch.map((e) => e.event) }),
 				},
-				body: JSON.stringify({ events: batch.map((e) => e.event) }),
-			});
+				timeoutMs,
+			);
+			// The player may have started deleting their data while the request was in flight.
+			if (isDeleting(db)) return nothing;
 
 			if (res.status === 401) {
 				// The server does not know us (e.g. its database was reset): register again, once.
 				if (reregistered) throw new ServerError("unauthorized");
 				reregistered = true;
 				await db.profile.update("me", { registered: false });
-				await register(db, fetchFn);
+				await register(db, fetchFn, timeoutMs);
 				continue;
 			}
 			if (!res.ok) throw new ServerError(`sync failed (${res.status})`);
 
-			const parsed = syncResponseSchema.safeParse(
-				await res.json().catch(() => null),
-			);
+			const body = await raceTimeout(
+				res.json().catch(() => null),
+				timeoutMs,
+			).catch((err: unknown) => {
+				if (err instanceof TimeoutError) throw new OfflineError(err.message);
+				return null;
+			});
+			const parsed = syncResponseSchema.safeParse(body);
 			if (!parsed.success) throw new ServerError("unexpected sync response");
+			if (isDeleting(db)) return nothing;
 
 			const before = await db.outbox.count();
 			rejected += await applyResponse(db, batch, parsed.data);
@@ -238,7 +271,11 @@ const running = new WeakMap<
 export function syncOutbox(
 	db: QurallyDb,
 	fetchFn: typeof fetch = (...args) => fetch(...args),
+	options: HttpOptions = {},
 ): Promise<SyncReport> {
+	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+	if (isDeleting(db))
+		return Promise.resolve({ status: "nothing", pending: 0, rejected: 0 });
 	const current = running.get(db);
 	if (current) {
 		current.rerun = true;
@@ -255,11 +292,11 @@ export function syncOutbox(
 	};
 	state.promise = (async () => {
 		try {
-			let result = await runOnce(db, fetchFn);
+			let result = await runOnce(db, fetchFn, timeoutMs);
 			// A call that joined us means something changed (e.g. back online): try once more.
 			while (state.rerun) {
 				state.rerun = false;
-				result = await runOnce(db, fetchFn);
+				result = await runOnce(db, fetchFn, timeoutMs);
 			}
 			return result;
 		} finally {
@@ -268,4 +305,9 @@ export function syncOutbox(
 	})();
 	running.set(db, state);
 	return state.promise;
+}
+
+/** Resolves when no sync is running (immediately if none is). Never rejects. */
+export async function waitForSync(db: QurallyDb): Promise<void> {
+	await running.get(db)?.promise.catch(() => undefined);
 }

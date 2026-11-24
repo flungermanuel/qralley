@@ -3,7 +3,10 @@ import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { players } from "../db/schema";
 
-const BEARER = /^Bearer ([0-9a-fA-F-]{36})\.([A-Za-z0-9_-]{43,})$/;
+// The id must be a real UUID: anything else would make PostgreSQL throw (500) instead of answering 401.
+const UUID =
+	"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+const BEARER = new RegExp(`^Bearer (${UUID})\\.([A-Za-z0-9_-]{43,})$`);
 
 export function hashSecret(secret: string): string {
 	return createHash("sha256").update(secret).digest("hex");

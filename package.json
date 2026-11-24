@@ -15,6 +15,7 @@
 		"dev": "pnpm -r --parallel --if-present dev",
 		"build": "pnpm -r --if-present build",
 		"test:e2e": "pnpm --filter @qurally/web test:e2e",
+		"station:set-status": "tsx --env-file-if-exists=.env scripts/station-set-status.ts",
 		"check:layers": "node scripts/check-layers.mjs"
 	},
 	"devDependencies": {

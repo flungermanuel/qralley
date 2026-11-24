@@ -9,11 +9,12 @@ import {
 	type StationStatus,
 	type SyncEvent,
 	type SyncResult,
+	slugSchema,
 	stationXp,
 	syncEventSchema,
 	totalXp,
 } from "@qurally/shared";
-import { and, count, countDistinct, eq, gte } from "drizzle-orm";
+import { and, count, countDistinct, eq, gte, ne } from "drizzle-orm";
 import type { Db } from "../db/client";
 import {
 	badgesAwarded,
@@ -110,7 +111,19 @@ async function flagStation(
 	stationId: string,
 	kind: "code_damaged" | "code_missing" | "unsafe" | "other",
 ): Promise<void> {
-	const current = await statusOf(tx, routeId, stationId);
+	// Lock the station row first: concurrent reports of different players are serialized, so the
+	// second one counts the committed report of the first and an existing block is never undone.
+	const [locked] = await tx
+		.select({ status: stationState.status })
+		.from(stationState)
+		.where(
+			and(
+				eq(stationState.routeId, routeId),
+				eq(stationState.stationId, stationId),
+			),
+		)
+		.for("update");
+	const current = (locked?.status as StationStatus | undefined) ?? "ok";
 	const [unsafe] = await tx
 		.select({ n: countDistinct(reports.playerId) })
 		.from(reports)
@@ -135,6 +148,7 @@ async function flagStation(
 			and(
 				eq(stationState.routeId, routeId),
 				eq(stationState.stationId, stationId),
+				ne(stationState.status, "blocked"),
 			),
 		);
 }
@@ -489,7 +503,9 @@ export async function syncPlayer(
 				status: outcome.status,
 				...(outcome.reason ? { reason: outcome.reason } : {}),
 			});
-			if (typeof raw.routeId === "string") touched.add(raw.routeId);
+			// Only well-formed route ids reach the database (a NUL byte would make PostgreSQL fail).
+			if (slugSchema.safeParse(raw.routeId).success)
+				touched.add(raw.routeId as string);
 		}
 	} catch (err) {
 		if (err instanceof PlayerGoneError) return null;

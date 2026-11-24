@@ -68,7 +68,18 @@ export function buildApp({
 			return reply.code(413).send({ error: "payload_too_large" });
 		if (status >= 400 && status < 500)
 			return reply.code(400).send({ error: "invalid_request" });
-		app.log.error({ err: { message: error.message } }, "unhandled error");
+		// Never log the message: database errors carry the SQL and its bound parameters
+		// (player ids, secret hashes, report notes). Name and SQLSTATE are enough to find the cause.
+		const code = (error as { code?: unknown }).code;
+		app.log.error(
+			{
+				err: {
+					name: error.name,
+					...(typeof code === "string" ? { code } : {}),
+				},
+			},
+			"unhandled error",
+		);
 		return reply.code(500).send({ error: "internal_error" });
 	});
 

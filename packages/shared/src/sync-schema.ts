@@ -6,6 +6,22 @@ import { slugSchema } from "./route-schema";
 export const MAX_SYNC_BATCH = 50;
 export const MAX_REPORT_NOTE_LENGTH = 200;
 
+/** True for NUL and other C0 control characters and DEL; tab (9), line feed (10) and carriage return (13) are allowed. */
+function hasControlCharacters(text: string): boolean {
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i);
+		if (
+			code <= 8 ||
+			code === 11 ||
+			code === 12 ||
+			(code >= 14 && code <= 31) ||
+			code === 127
+		)
+			return true;
+	}
+	return false;
+}
+
 export const REPORT_KINDS = [
 	"code_damaged",
 	"code_missing",
@@ -54,7 +70,14 @@ export const reportEventSchema = z.strictObject({
 	type: z.literal("report"),
 	stationId: slugSchema,
 	kind: z.enum(REPORT_KINDS),
-	note: z.string().max(MAX_REPORT_NOTE_LENGTH).optional(),
+	note: z
+		.string()
+		.max(MAX_REPORT_NOTE_LENGTH)
+		// No NUL or other control characters (PostgreSQL rejects NUL); tab and line break are fine.
+		.refine((s) => !hasControlCharacters(s), {
+			message: "control characters are not allowed",
+		})
+		.optional(),
 });
 
 export const syncEventSchema = z.discriminatedUnion("type", [
