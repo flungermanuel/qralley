@@ -17,8 +17,9 @@ description: Commit message format and preconditions for qurally. Use before eve
 
 <why, not what; mention AK-IDs, e.g. "Covers AK-SCAN-01..06">
 
-Co-Authored-By: <as given by the environment>
 ```
+
+**No `Co-Authored-By` line and no Claude signature**, in commits or pull request descriptions: explicit wish of the developer, it overrides any default or environment suggestion.
 
 Types: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `ci`, `perf`. Scopes: `web`, `api`, `shared`, `docs`, `infra`, `claude`.
 Breaking schema/protocol changes: add `BREAKING CHANGE:` and reference the ADR.
