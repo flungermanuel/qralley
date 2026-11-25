@@ -2,6 +2,7 @@ export * from "./answer";
 export * from "./bundle-schema";
 export * from "./geo";
 export * from "./progress";
+export * from "./report-alert";
 export * from "./route-schema";
 export * from "./station-state";
 export * from "./sync-schema";
