@@ -1,5 +1,7 @@
 import {
+	type AlertThresholds,
 	checkFallbackPosition,
+	DEFAULT_ALERT_THRESHOLDS,
 	isCorrectAnswer,
 	isRouteComplete,
 	type Route,
@@ -23,6 +25,11 @@ import {
 	stationState,
 	syncEvents,
 } from "../db/schema";
+import {
+	type AlertOptions,
+	collectAlert,
+	type StationAlert,
+} from "./report-alert";
 import {
 	type Executor,
 	getLatestRoute,
@@ -54,6 +61,9 @@ interface Ctx {
 	keys: SigningKeys;
 	playerId: string;
 	routeOf: (routeId: string) => Promise<Route | null>;
+	thresholds: AlertThresholds;
+	/** Filled during the transaction, handed out only after it committed. */
+	alerts: StationAlert[];
 }
 
 type Resolved = { route: Route; station: Station } | { outcome: Outcome };
@@ -105,11 +115,13 @@ async function progressOf(ctx: Ctx, routeId: string, stationId: string) {
 
 /** Applies a report to the station state (SPEC §5.3). Blocked stations stay blocked. */
 async function flagStation(
-	tx: Executor,
+	ctx: Ctx,
 	routeId: string,
 	stationId: string,
 	kind: "code_damaged" | "code_missing" | "unsafe" | "other",
+	insertedReportId: string | undefined,
 ): Promise<void> {
+	const { tx } = ctx;
 	// ADR 0007: reports never block. setWhere (status = 'ok') encodes the rule: only an "ok"
 	// station becomes "reported"; an existing report or manual block stays unchanged, incl. its
 	// reason. ON CONFLICT takes the row lock, so concurrent reports and operator changes serialize.
@@ -126,6 +138,8 @@ async function flagStation(
 			set: values,
 			setWhere: eq(stationState.status, "ok"),
 		});
+	// Count only now: the upsert above holds the row lock (see detectAlert).
+	await collectAlert(ctx, routeId, stationId, insertedReportId);
 }
 
 async function applyScan(
@@ -254,15 +268,18 @@ async function applyFallback(
 			),
 		)
 		.limit(1);
-	if (!alreadyReported) {
-		await ctx.tx.insert(reports).values({
-			playerId: ctx.playerId,
-			routeId: route.id,
-			stationId: station.id,
-			kind: "code_damaged",
-		});
-	}
-	await flagStation(ctx.tx, route.id, station.id, "code_damaged");
+	const [inserted] = alreadyReported
+		? []
+		: await ctx.tx
+				.insert(reports)
+				.values({
+					playerId: ctx.playerId,
+					routeId: route.id,
+					stationId: station.id,
+					kind: "code_damaged",
+				})
+				.returning({ id: reports.id });
+	await flagStation(ctx, route.id, station.id, "code_damaged", inserted?.id);
 	return accepted;
 }
 
@@ -300,14 +317,17 @@ async function applyReportEvent(
 		);
 	if ((recent?.n ?? 0) >= MAX_REPORTS_PER_DAY) return rejected("rate_limited");
 
-	await ctx.tx.insert(reports).values({
-		playerId: ctx.playerId,
-		routeId: route.id,
-		stationId: station.id,
-		kind: ev.kind,
-		note: ev.note ?? null,
-	});
-	await flagStation(ctx.tx, route.id, station.id, ev.kind);
+	const [inserted] = await ctx.tx
+		.insert(reports)
+		.values({
+			playerId: ctx.playerId,
+			routeId: route.id,
+			stationId: station.id,
+			kind: ev.kind,
+			note: ev.note ?? null,
+		})
+		.returning({ id: reports.id });
+	await flagStation(ctx, route.id, station.id, ev.kind, inserted?.id);
 	return accepted;
 }
 
@@ -333,11 +353,12 @@ class PlayerGoneError extends Error {}
  */
 async function handleEvent(
 	db: Db,
-	base: Omit<Ctx, "tx">,
+	base: Omit<Ctx, "tx" | "alerts">,
 	raw: { id: string } & Record<string, unknown>,
-): Promise<Outcome> {
+): Promise<{ outcome: Outcome; alerts: StationAlert[] }> {
 	const parsed = syncEventSchema.safeParse(raw);
-	return db.transaction(async (tx) => {
+	const alerts: StationAlert[] = [];
+	const outcome = await db.transaction(async (tx) => {
 		const locked = await tx
 			.select({ id: players.id })
 			.from(players)
@@ -365,7 +386,7 @@ async function handleEvent(
 		}
 
 		const outcome = parsed.success
-			? await applyEvent({ ...base, tx }, parsed.data)
+			? await applyEvent({ ...base, tx, alerts }, parsed.data)
 			: rejected("malformed");
 		await tx.insert(syncEvents).values({
 			playerId: base.playerId,
@@ -379,6 +400,7 @@ async function handleEvent(
 		});
 		return outcome;
 	});
+	return { outcome, alerts };
 }
 
 export interface RouteProgress {
@@ -457,7 +479,9 @@ export async function syncPlayer(
 	keys: SigningKeys,
 	playerId: string,
 	events: ({ id: string } & Record<string, unknown>)[],
+	options: AlertOptions = {},
 ): Promise<SyncResponse | null> {
+	const thresholds = options.thresholds ?? DEFAULT_ALERT_THRESHOLDS;
 	const routeCache = new Map<string, Promise<Route | null>>();
 	const routeOf = (routeId: string) => {
 		let hit = routeCache.get(routeId);
@@ -472,7 +496,17 @@ export async function syncPlayer(
 	const touched = new Set<string>();
 	try {
 		for (const raw of events) {
-			const outcome = await handleEvent(db, { keys, playerId, routeOf }, raw);
+			const { outcome, alerts } = await handleEvent(
+				db,
+				{ keys, playerId, routeOf, thresholds },
+				raw,
+			);
+			// The transaction has committed; a failing alarm sink must not fail the sync.
+			for (const alert of alerts) {
+				try {
+					await options.onAlert?.(alert);
+				} catch {}
+			}
 			results.push({
 				id: raw.id,
 				status: outcome.status,

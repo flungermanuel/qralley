@@ -40,7 +40,7 @@ Ziel: Meldungen sperren nie von selbst (ADR 0007); bei 2–3 Meldungen entsteht 
   - ✔ Doku erledigt (2026-11-25): ADR 0007 (Folgen, Code-Punkt) und Fahrplan A1/A2 verweisen nicht mehr auf `applyReport`; die Regel „Meldungen sperren nie" steht allein im Upsert von `flagStation`.
   - ✔ Testdaten mit dem Grund „unsafe reports" auf „Baustelle" geändert (Commit `b3639a1`).
 - **A2:** ✔ erledigt (2026-11-25). Reine Alarmlogik und Schwellen-Konfiguration (Standard 3 / 2) in `shared`.
-- **A3:** Alarm im Sync, genau eine Log-Zeile `station_alert` ohne Spielerbezug, Notiz oder Position.
+- **A3:** ✔ erledigt (2026-11-25; offen: Entscheidung zu Kontolöschung und Alarm, siehe ADR 0007 „Folgen"). Alarm im Sync, genau eine Log-Zeile `station_alert` ohne Spielerbezug, Notiz oder Position.
 - **A4:** CLI `pnpm station:alerts` (inkl. Info-Liste einzelner „unsicher"-Meldungen, OE7) und Exit-Code-Tests der Befehle.
 - Prüfen: Alarm erscheint genau einmal, auch bei parallelen Meldungen; Log enthält keine personenbezogenen Daten.
 

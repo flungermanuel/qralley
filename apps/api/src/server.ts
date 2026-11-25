@@ -1,4 +1,5 @@
 import { buildApp } from "./app";
+import { loadAlertThresholds } from "./config";
 import { createDb } from "./db/client";
 import { parseSigningKeys } from "./domain/token";
 
@@ -11,8 +12,19 @@ if (!databaseUrl) {
 // Fails fast with a clear message when QR_SIGNING_KEYS is missing or too weak.
 const signingKeys = parseSigningKeys(process.env.QR_SIGNING_KEYS);
 
+// Aborts before connecting or listening when a threshold variable is malformed.
+let alertThresholds: ReturnType<typeof loadAlertThresholds>;
+try {
+	alertThresholds = loadAlertThresholds(process.env);
+} catch (err) {
+	console.error(
+		err instanceof Error ? err.message : "invalid alert thresholds",
+	);
+	process.exit(1);
+}
+
 const { db, close } = createDb(databaseUrl);
-const app = buildApp({ db, signingKeys });
+const app = buildApp({ db, signingKeys, alertThresholds });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
 	process.on(signal, async () => {

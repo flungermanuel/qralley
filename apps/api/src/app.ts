@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import type { Writable } from "node:stream";
 import rateLimit from "@fastify/rate-limit";
-import { base64urlDecode, syncRequestSchema } from "@qurally/shared";
+import {
+	type AlertThresholds,
+	base64urlDecode,
+	DEFAULT_ALERT_THRESHOLDS,
+	syncRequestSchema,
+} from "@qurally/shared";
 import { eq } from "drizzle-orm";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -22,6 +27,8 @@ export interface AppOptions {
 	logLevel?: string;
 	/** Requests per minute and client. */
 	rateLimit?: { playersPerMinute?: number; globalPerMinute?: number };
+	/** Operator alarm thresholds (ADR 0007); defaults to DEFAULT_ALERT_THRESHOLDS. */
+	alertThresholds?: AlertThresholds;
 }
 
 const MIN_SECRET_BYTES = 32;
@@ -43,6 +50,7 @@ export function buildApp({
 	logStream,
 	logLevel,
 	rateLimit: limits,
+	alertThresholds = DEFAULT_ALERT_THRESHOLDS,
 }: AppOptions): FastifyInstance {
 	const app = Fastify({
 		bodyLimit: 64 * 1024,
@@ -181,6 +189,21 @@ export function buildApp({
 				signingKeys,
 				playerId,
 				body.data.events,
+				{
+					thresholds: alertThresholds,
+					// Explicit whitelist: no player id, note or position ever reaches the log.
+					onAlert: (alert) =>
+						app.log.info(
+							{
+								routeId: alert.routeId,
+								stationId: alert.stationId,
+								reportersAll: alert.reporters.all,
+								reportersUnsafe: alert.reporters.unsafe,
+								oldestOpenReportAt: alert.oldestOpenReportAt.toISOString(),
+							},
+							"station_alert",
+						),
+				},
 			);
 			if (!response) return reply.code(401).send({ error: "unauthorized" });
 			return response;
