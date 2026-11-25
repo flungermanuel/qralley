@@ -98,7 +98,7 @@ describe("route screen", () => {
 		const bundle = bundleFixture();
 		bundle.stationStates.annasaeule = {
 			status: "blocked",
-			reason: "unsafe reports",
+			reason: "Baustelle",
 		};
 		bundle.stationStates.hofkirche = {
 			status: "reported",

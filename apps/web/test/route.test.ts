@@ -95,7 +95,7 @@ describe("loadRoute", () => {
 		const blocked = bundleFixture();
 		blocked.stationStates.annasaeule = {
 			status: "blocked",
-			reason: "unsafe reports",
+			reason: "Baustelle",
 		};
 		const result = await loadRoute(db, ROUTE_ID, async () =>
 			jsonResponse(blocked, { etag: '"2"' }),

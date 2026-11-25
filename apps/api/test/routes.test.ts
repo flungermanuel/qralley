@@ -81,7 +81,7 @@ describe("GET /api/routes/:id", () => {
 		const before = await get("/api/routes/innsbruck-altstadt");
 		await db
 			.update(stationState)
-			.set({ status: "blocked", statusReason: "unsafe reports" })
+			.set({ status: "blocked", statusReason: "Baustelle" })
 			.where(eq(stationState.stationId, "annasaeule"));
 		const after = await get("/api/routes/innsbruck-altstadt", {
 			"if-none-match": String(before.headers.etag),
@@ -90,7 +90,7 @@ describe("GET /api/routes/:id", () => {
 		expect(after.headers.etag).not.toBe(before.headers.etag);
 		expect(after.json().stationStates.annasaeule).toEqual({
 			status: "blocked",
-			reason: "unsafe reports",
+			reason: "Baustelle",
 		});
 	});
 
