@@ -611,13 +611,41 @@ describe("report", () => {
 		expect((await stateOf(G))?.status).toBe("reported");
 	});
 
-	it("AK-REP-02: unsafe reports from two different players block the station", async () => {
+	it("AK-REP-02: unsafe reports from two different players never block the station (ADR 0007)", async () => {
 		const a = await player();
 		const b = await player();
 		await one(a, ev.report(G, "unsafe"));
 		const r = await one(b, ev.report(G, "unsafe"));
-		expect(r.stationStates[G].status).toBe("blocked");
-		expect((await stateOf(G))?.status).toBe("blocked");
+		expect(r.stationStates[G].status).toBe("reported");
+		const row = await stateOf(G);
+		expect(row?.status).toBe("reported");
+		expect(row?.statusReason ?? "").not.toMatch(/unsafe reports/i);
+	});
+
+	it("AK-REP-02: unsafe reports from five different players leave the station reported", async () => {
+		for (let i = 0; i < 5; i++)
+			await one(await player(), ev.report(G, "unsafe"));
+		const row = await stateOf(G);
+		expect(row?.status).toBe("reported");
+		expect(row?.statusReason ?? "").not.toMatch(/unsafe reports/i);
+		expect(await db.select().from(reports)).toHaveLength(5);
+	});
+
+	it("AK-REP-01: a report for a station without a station_state row creates it as reported (N5)", async () => {
+		await db.delete(stationState).where(eq(stationState.stationId, G));
+		expect(await stateOf(G)).toBeUndefined();
+		const c = await player();
+		const r = await one(c, ev.report(G, "code_missing"));
+		expect(r.status).toBe("accepted");
+		expect((await stateOf(G))?.status).toBe("reported");
+		expect(r.stationStates[G].status).toBe("reported");
+	});
+
+	it("AK-REP-02: an unsafe report for a station without a station_state row creates it as reported (N5)", async () => {
+		await db.delete(stationState).where(eq(stationState.stationId, G));
+		await one(await player(), ev.report(G, "unsafe"));
+		await one(await player(), ev.report(G, "unsafe"));
+		expect((await stateOf(G))?.status).toBe("reported");
 	});
 
 	it("AK-REP-03: unsafe reports from the same player count once", async () => {
@@ -627,6 +655,15 @@ describe("report", () => {
 		expect(again.status).toBe("duplicate");
 		expect((await stateOf(G))?.status).toBe("reported");
 		expect(await db.select().from(reports)).toHaveLength(1);
+	});
+
+	it("AK-REP-01: a later report does not overwrite the reason of an earlier one", async () => {
+		const c = await player();
+		await one(c, ev.report(G, "code_missing"));
+		await one(await player(), ev.report(G, "unsafe"));
+		const row = await stateOf(G);
+		expect(row?.status).toBe("reported");
+		expect(row?.statusReason).toBe("report:code_missing");
 	});
 
 	it("other report kinds from many players never block", async () => {
@@ -644,6 +681,19 @@ describe("report", () => {
 		const r = await one(c, ev.report(G, "other"));
 		expect(r.status).toBe("accepted");
 		expect((await stateOf(G))?.status).toBe("blocked");
+	});
+
+	it("AK-REP-02: a manually blocked station stays blocked, with its reason, after unsafe reports", async () => {
+		await db
+			.update(stationState)
+			.set({ status: "blocked", statusReason: "Baustelle" })
+			.where(eq(stationState.stationId, G));
+		await one(await player(), ev.report(G, "unsafe"));
+		await one(await player(), ev.report(G, "unsafe"));
+		expect(await stateOf(G)).toMatchObject({
+			status: "blocked",
+			statusReason: "Baustelle",
+		});
 	});
 
 	it("AK-REP-06: at most 10 reports per player per day", async () => {

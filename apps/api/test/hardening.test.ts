@@ -86,7 +86,7 @@ const statusOf = async (stationId: string) =>
 	)[0]?.status;
 
 describe("station blocking under concurrency (review finding 1)", () => {
-	it("AK-REP-02: unsafe reports of two players arriving at the same moment block the station", async () => {
+	it("AK-REP-02: unsafe reports of two players arriving at the same moment leave the station reported", async () => {
 		for (let round = 0; round < 6; round++) {
 			await resetDb(db);
 			await publishExample(db);
@@ -99,21 +99,35 @@ describe("station blocking under concurrency (review finding 1)", () => {
 
 			expect(ra.statusCode).toBe(200);
 			expect(rb.statusCode).toBe(200);
-			expect(await statusOf(G), `round ${round}`).toBe("blocked");
+			expect(await statusOf(G), `round ${round}`).toBe("reported");
 		}
 	});
 
-	it("a blocked station is never reset by a report that raced with the block", async () => {
+	it("AK-REP-02: five parallel unsafe reports of different players leave the station reported", async () => {
+		const ps = await Promise.all([1, 2, 3, 4, 5].map(() => player()));
+		const rs = await Promise.all(ps.map((p) => sync(p, [report(G, "unsafe")])));
+		for (const r of rs) expect(r.statusCode).toBe(200);
+		expect(await statusOf(G)).toBe("reported");
+	});
+
+	it("AK-REP-02: a manually blocked station is never reset by racing reports", async () => {
 		for (let round = 0; round < 4; round++) {
 			await resetDb(db);
 			await publishExample(db);
 			const [a, b, c] = [await player(), await player(), await player()];
+			// The block runs in the same race as the reports; the outcome must not depend on order.
 			await Promise.all([
+				setStationStatus(db, ROUTE, A, "blocked", "Baustelle"),
 				sync(a, [report(A, "unsafe")]),
 				sync(b, [report(A, "unsafe")]),
 				sync(c, [report(A, "code_missing")]),
 			]);
-			expect(await statusOf(A), `round ${round}`).toBe("blocked");
+			const [row] = await db
+				.select()
+				.from(stationState)
+				.where(eq(stationState.stationId, A));
+			expect(row?.status, `round ${round}`).toBe("blocked");
+			expect(row?.statusReason, `round ${round}`).toBe("Baustelle");
 		}
 	});
 });

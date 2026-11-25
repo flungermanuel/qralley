@@ -1,5 +1,4 @@
 import {
-	applyReport,
 	checkFallbackPosition,
 	isCorrectAnswer,
 	isRouteComplete,
@@ -14,7 +13,7 @@ import {
 	syncEventSchema,
 	totalXp,
 } from "@qurally/shared";
-import { and, count, countDistinct, eq, gte, ne } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 import type { Db } from "../db/client";
 import {
 	badgesAwarded,
@@ -111,46 +110,22 @@ async function flagStation(
 	stationId: string,
 	kind: "code_damaged" | "code_missing" | "unsafe" | "other",
 ): Promise<void> {
-	// Lock the station row first: concurrent reports of different players are serialized, so the
-	// second one counts the committed report of the first and an existing block is never undone.
-	const [locked] = await tx
-		.select({ status: stationState.status })
-		.from(stationState)
-		.where(
-			and(
-				eq(stationState.routeId, routeId),
-				eq(stationState.stationId, stationId),
-			),
-		)
-		.for("update");
-	const current = (locked?.status as StationStatus | undefined) ?? "ok";
-	const [unsafe] = await tx
-		.select({ n: countDistinct(reports.playerId) })
-		.from(reports)
-		.where(
-			and(
-				eq(reports.routeId, routeId),
-				eq(reports.stationId, stationId),
-				eq(reports.kind, "unsafe"),
-				eq(reports.status, "open"),
-			),
-		);
-	const next = applyReport(current, kind, unsafe?.n ?? 0);
-	if (next === current) return;
+	// ADR 0007: reports never block. setWhere (status = 'ok') encodes the rule: only an "ok"
+	// station becomes "reported"; an existing report or manual block stays unchanged, incl. its
+	// reason. ON CONFLICT takes the row lock, so concurrent reports and operator changes serialize.
+	const values = {
+		status: "reported" as const,
+		statusChangedAt: new Date(),
+		statusReason: `report:${kind}`,
+	};
 	await tx
-		.update(stationState)
-		.set({
-			status: next,
-			statusChangedAt: new Date(),
-			statusReason: next === "blocked" ? "unsafe reports" : `report:${kind}`,
-		})
-		.where(
-			and(
-				eq(stationState.routeId, routeId),
-				eq(stationState.stationId, stationId),
-				ne(stationState.status, "blocked"),
-			),
-		);
+		.insert(stationState)
+		.values({ routeId, stationId, ...values })
+		.onConflictDoUpdate({
+			target: [stationState.routeId, stationState.stationId],
+			set: values,
+			setWhere: eq(stationState.status, "ok"),
+		});
 }
 
 async function applyScan(
